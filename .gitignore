@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# DocXForge runtime artifacts (must never be committed)
+.docxforge/
+sandbox/
+templates_store/
+*.docx
+*.docx.tmp
+!backend/tests/fixtures/**/*.docx
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
