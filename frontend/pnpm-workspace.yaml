@@ -1,0 +1,3 @@
+# esbuild ships a platform-specific binary and needs its postinstall script.
+allowBuilds:
+  esbuild: true
