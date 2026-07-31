@@ -105,10 +105,16 @@ def template_docx(officecli_bin: str, tmp_path: Path) -> Path:
     subprocess.run([officecli_bin, "create", str(path)], check=True, capture_output=True)
     subprocess.run(
         [
-            officecli_bin, "add", str(path), "/body",
-            "--type", "paragraph",
-            "--prop", "text=投标文件封面标题",
-            "--prop", "style=Title",
+            officecli_bin,
+            "add",
+            str(path),
+            "/body",
+            "--type",
+            "paragraph",
+            "--prop",
+            "text=投标文件封面标题",
+            "--prop",
+            "style=Title",
         ],
         check=True,
         capture_output=True,

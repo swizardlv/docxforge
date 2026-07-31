@@ -122,14 +122,12 @@ class TemplateEngine(Protocol):
     ) -> TemplateInfo:
         """Ingest a reference ``.docx`` and persist its template_config.json."""
 
-    def list_templates(self) -> list[TemplateInfo]:
-        ...
+    def list_templates(self) -> list[TemplateInfo]: ...
 
     def get_template(self, template_id: str) -> TemplateInfo:
         """Raises TemplateNotFoundError when unknown."""
 
-    def delete_template(self, template_id: str) -> None:
-        ...
+    def delete_template(self, template_id: str) -> None: ...
 
     def prepare_base(self, template_id: str | None, dest: Path) -> PreparedBase:
         """Produce a working document at ``dest``.
@@ -146,9 +144,9 @@ class TemplateEngine(Protocol):
 class MarkdownParser(Protocol):
     """Markdown -> DocumentAST (PRD task 2)."""
 
-    def parse(self, markdown: str, *, doc_title: str | None = None,
-              template_id: str | None = None) -> DocumentAST:
-        ...
+    def parse(
+        self, markdown: str, *, doc_title: str | None = None, template_id: str | None = None
+    ) -> DocumentAST: ...
 
 
 @runtime_checkable
@@ -161,35 +159,29 @@ class Renderer(Protocol):
         style_map: StyleMap,
         *,
         parent: str = "/body",
-    ) -> list[BatchItem]:
-        ...
+    ) -> list[BatchItem]: ...
 
 
 @runtime_checkable
 class DocumentAssembler(Protocol):
     """Cover / TOC / header / footer / settings injection (PRD task 4)."""
 
-    def cover_commands(self, options: CoverOptions, base: PreparedBase) -> list[BatchItem]:
-        ...
+    def cover_commands(self, options: CoverOptions, base: PreparedBase) -> list[BatchItem]: ...
 
-    def toc_commands(self, options: TocOptions, base: PreparedBase) -> list[BatchItem]:
-        ...
+    def toc_commands(self, options: TocOptions, base: PreparedBase) -> list[BatchItem]: ...
 
     def header_footer_commands(
         self, options: HeaderFooterOptions, base: PreparedBase
-    ) -> list[BatchItem]:
-        ...
+    ) -> list[BatchItem]: ...
 
-    def settings_commands(self, *, update_fields: bool) -> list[BatchItem]:
-        ...
+    def settings_commands(self, *, update_fields: bool) -> list[BatchItem]: ...
 
 
 @runtime_checkable
 class RenderPipeline(Protocol):
     """End-to-end orchestration: markdown in, .docx on disk out."""
 
-    def render(self, request: RenderRequest, *, workdir: Path, job_id: str) -> RenderResult:
-        ...
+    def render(self, request: RenderRequest, *, workdir: Path, job_id: str) -> RenderResult: ...
 
 
 @runtime_checkable
@@ -199,11 +191,9 @@ class Sandbox(Protocol):
     def create(self, job_id: str) -> Path:
         """Create and return the job's scratch directory."""
 
-    def path_for(self, job_id: str) -> Path:
-        ...
+    def path_for(self, job_id: str) -> Path: ...
 
-    def exists(self, job_id: str) -> bool:
-        ...
+    def exists(self, job_id: str) -> bool: ...
 
     def destroy(self, job_id: str) -> DestroyReport:
         """Overwrite then unlink every file, remove the directory."""
@@ -216,20 +206,15 @@ class Sandbox(Protocol):
 class JobStore(Protocol):
     """Job lifecycle bookkeeping backing the API layer."""
 
-    def create_job(self, *, ttl_seconds: int | None = None) -> JobInfo:
-        ...
+    def create_job(self, *, ttl_seconds: int | None = None) -> JobInfo: ...
 
     def get_job(self, job_id: str) -> JobInfo:
         """Raises JobNotFoundError / JobExpiredError."""
 
-    def list_jobs(self) -> list[JobInfo]:
-        ...
+    def list_jobs(self) -> list[JobInfo]: ...
 
-    def mark_ready(self, job_id: str, result: RenderResult) -> JobInfo:
-        ...
+    def mark_ready(self, job_id: str, result: RenderResult) -> JobInfo: ...
 
-    def mark_failed(self, job_id: str, error: str) -> JobInfo:
-        ...
+    def mark_failed(self, job_id: str, error: str) -> JobInfo: ...
 
-    def destroy_job(self, job_id: str) -> DestroyReport:
-        ...
+    def destroy_job(self, job_id: str) -> DestroyReport: ...
