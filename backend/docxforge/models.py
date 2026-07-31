@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -92,17 +92,15 @@ class ThematicBreakNode(BaseNode):
 
 
 ASTNode = Annotated[
-    Union[
-        HeadingNode,
-        ParagraphNode,
-        ListNode,
-        TableNode,
-        CodeNode,
-        QuoteNode,
-        ImageNode,
-        PageBreakNode,
-        ThematicBreakNode,
-    ],
+    HeadingNode
+    | ParagraphNode
+    | ListNode
+    | TableNode
+    | CodeNode
+    | QuoteNode
+    | ImageNode
+    | PageBreakNode
+    | ThematicBreakNode,
     Field(discriminator="type"),
 ]
 

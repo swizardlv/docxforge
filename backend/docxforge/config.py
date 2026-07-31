@@ -40,9 +40,7 @@ class Settings(BaseSettings):
 
     # --- Storage ---
     sandbox_root: Path = Field(default_factory=_default_sandbox_root)
-    templates_dir: Path = Field(
-        default_factory=lambda: Path.home() / ".docxforge" / "templates"
-    )
+    templates_dir: Path = Field(default_factory=lambda: Path.home() / ".docxforge" / "templates")
     max_upload_mb: int = Field(default=50)
 
     # --- Privacy / ephemeral storage ---
