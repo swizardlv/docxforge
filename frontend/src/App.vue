@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 import AppHeader from '@/components/AppHeader.vue'
 import DestroyPanel from '@/components/DestroyPanel.vue'
@@ -15,6 +15,11 @@ import SectionCard from '@/components/ui/SectionCard.vue'
 import { useForgeStore } from '@/stores/forge'
 
 const store = useForgeStore()
+const editorRef = ref<InstanceType<typeof MarkdownEditor> | null>(null)
+
+function handleSelectLine(line: number): void {
+  editorRef.value?.scrollToLine(line)
+}
 
 onMounted(() => {
   void store.connect()
@@ -49,6 +54,7 @@ onBeforeUnmount(() => {
             body-class="flex min-h-0 flex-col p-4"
           >
             <MarkdownEditor
+              ref="editorRef"
               v-model="store.markdown"
               :disabled="store.exporting"
             />
@@ -80,7 +86,7 @@ onBeforeUnmount(() => {
             description="由 Markdown 解析出的标题树与节点统计"
             body-class="flex max-h-[26rem] min-h-0 flex-col p-4"
           >
-            <StructurePreview />
+            <StructurePreview @select-line="handleSelectLine" />
           </SectionCard>
 
           <SectionCard

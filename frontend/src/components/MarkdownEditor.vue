@@ -224,6 +224,26 @@ function fileToDataUri(file: File): Promise<string> {
     reader.readAsDataURL(file)
   })
 }
+
+function scrollToLine(targetLine: number): void {
+  const el = textareaRef.value
+  if (!el || targetLine <= 0) return
+
+  const linesList = model.value.split('\n')
+  let charPos = 0
+  for (let i = 0; i < Math.min(targetLine - 1, linesList.length); i++) {
+    charPos += (linesList[i]?.length ?? 0) + 1
+  }
+
+  el.focus()
+  el.setSelectionRange(charPos, charPos)
+  const lineHeight = 24
+  el.scrollTop = Math.max(0, (targetLine - 3) * lineHeight)
+}
+
+defineExpose({
+  scrollToLine,
+})
 </script>
 
 <template>

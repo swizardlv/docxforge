@@ -6,6 +6,7 @@ import AppIcon, { type IconName } from '@/components/ui/AppIcon.vue'
 import { useForgeStore } from '@/stores/forge'
 
 const store = useForgeStore()
+const emit = defineEmits<{ (e: 'selectLine', line: number): void }>()
 
 const outline = computed(() => store.outline)
 
@@ -60,6 +61,7 @@ const blocks = computed<{ key: string; icon: IconName; label: string; value: num
       <OutlineTree
         v-if="outline.tree.length"
         :nodes="outline.tree"
+        @select-line="(line) => emit('selectLine', line)"
       />
       <p
         v-else
