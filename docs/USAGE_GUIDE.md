@@ -52,11 +52,11 @@ uv run pytest backend/tests -q
 由于分支代码已合并到 `main` 分支：
 
 - **保留模式**：若后续还需要并行分模块开发，可继续保留这 4 个子 Worktree 目录。
-- **清理模式**：若希望回到单目录模式，可以在主目录输入以下指令移除多余的 Worktree 目录：
+- **清理模式**：若希望回到单目录模式，可以在主目录输入带有 `--force` 参数的指令（强制清理包含 node_modules 或临时构建文件的子目录）：
   ```bash
   cd /Users/swizard/code/docxforge
-  git worktree remove ../docxforge-api
-  git worktree remove ../docxforge-engine
-  git worktree remove ../docxforge-renderer
-  git worktree remove ../docxforge-frontend
+  git worktree remove --force ../docxforge-api
+  git worktree remove --force ../docxforge-engine
+  git worktree remove --force ../docxforge-renderer
+  git worktree remove --force ../docxforge-frontend
   ```
