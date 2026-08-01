@@ -10,6 +10,7 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const gutterRef = ref<HTMLDivElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const folderInputRef = ref<HTMLInputElement | null>(null)
+const isDragging = ref(false)
 
 const lines = computed(() => model.value.split('\n').length)
 const characters = computed(() => model.value.length)
@@ -65,6 +66,11 @@ async function handleFolderImport(event: Event): Promise<void> {
   const files = Array.from(target.files ?? [])
   if (files.length === 0) return
 
+  await processFileList(files)
+  target.value = ''
+}
+
+async function processFileList(files: File[]): Promise<void> {
   let mdFile: File | null = null
   const imageFiles: File[] = []
 
@@ -80,7 +86,6 @@ async function handleFolderImport(event: Event): Promise<void> {
   }
 
   if (!mdFile) {
-    target.value = ''
     return
   }
 
@@ -111,7 +116,6 @@ async function handleFolderImport(event: Event): Promise<void> {
   })
 
   model.value = processedMd
-  target.value = ''
 }
 
 /** Handle Cmd+V / Ctrl+V image paste */
@@ -145,6 +149,25 @@ function handlePaste(event: ClipboardEvent): void {
   reader.readAsDataURL(file)
 }
 
+function handleDragOver(event: DragEvent): void {
+  event.preventDefault()
+  isDragging.value = true
+}
+
+function handleDragLeave(event: DragEvent): void {
+  event.preventDefault()
+  isDragging.value = false
+}
+
+async function handleDrop(event: DragEvent): Promise<void> {
+  event.preventDefault()
+  isDragging.value = false
+  const files = Array.from(event.dataTransfer?.files ?? [])
+  if (files.length > 0) {
+    await processFileList(files)
+  }
+}
+
 function fileToDataUri(file: File): Promise<string> {
   return new Promise((resolve) => {
     const reader = new FileReader()
@@ -161,22 +184,22 @@ function fileToDataUri(file: File): Promise<string> {
         :for="editorId"
         class="df-label !pb-0"
       >Markdown 正文</label>
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2">
         <button
           type="button"
           :disabled="disabled"
-          class="text-xs text-accent hover:text-accent-hover disabled:opacity-50"
-          @click="triggerFileImport"
+          class="rounded bg-accent/10 px-2 py-1 text-xs font-medium text-accent hover:bg-accent/20 disabled:opacity-50"
+          @click="triggerFolderImport"
         >
-          📄 导入单文件
+          📂 导入项目文件夹 (推荐：含自动绑定图片)
         </button>
         <button
           type="button"
           :disabled="disabled"
-          class="text-xs text-accent hover:text-accent-hover disabled:opacity-50"
-          @click="triggerFolderImport"
+          class="text-xs text-ink-muted hover:text-ink disabled:opacity-50"
+          @click="triggerFileImport"
         >
-          📂 导入项目文件夹 (含图片)
+          📄 单文件
         </button>
       </div>
 
@@ -200,7 +223,11 @@ function fileToDataUri(file: File): Promise<string> {
       >
     </div>
     <div
-      class="flex min-h-0 flex-1 overflow-hidden rounded-md border border-line bg-surface focus-within:border-accent"
+      class="relative flex min-h-0 flex-1 overflow-hidden rounded-md border bg-surface transition-colors focus-within:border-accent"
+      :class="[isDragging ? 'border-accent ring-2 ring-accent/20' : 'border-line']"
+      @dragover="handleDragOver"
+      @dragleave="handleDragLeave"
+      @drop="handleDrop"
     >
       <!-- Line numbers are decorative; screen readers read the textarea only. -->
       <div
@@ -231,12 +258,21 @@ function fileToDataUri(file: File): Promise<string> {
         @keydown.tab="handleTab"
         @paste="handlePaste"
       />
+
+      <div
+        v-if="isDragging"
+        class="pointer-events-none absolute inset-0 flex items-center justify-center bg-accent/5 backdrop-blur-[1px]"
+      >
+        <p class="rounded-lg bg-surface px-4 py-2 text-sm font-medium text-accent shadow-md">
+          📥 释放鼠标以导入 Markdown 文件与图片文件夹
+        </p>
+      </div>
     </div>
     <p
       :id="`${editorId}-hint`"
       class="df-hint flex items-center justify-between"
     >
-      <span>支持项目文件夹导入、直接粘贴截图图片 (`Cmd+V`)、表格与代码块。</span>
+      <span>支持拖拽项目文件夹一键导入、自动嵌入本地图片、截图粘贴 (`Cmd+V`)。</span>
       <span class="font-mono tabular-nums">{{ lines }} 行 · {{ characters }} 字符</span>
     </p>
   </div>
