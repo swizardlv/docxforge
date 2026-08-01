@@ -71,18 +71,26 @@ class DefaultMarkdownParser:
         if ttype == "paragraph":
             sub_children = token.get("children", [])
             img_nodes: list[ASTNode] = []
+            non_img_children: list[dict] = []
+
             for child in sub_children:
                 if isinstance(child, dict) and child.get("type") == "image":
-                    url = child.get("attrs", {}).get("url", child.get("src", ""))
+                    url = (
+                        child.get("attrs", {}).get("url")
+                        or child.get("src")
+                        or child.get("attrs", {}).get("src", "")
+                    )
                     alt_text = child.get("attrs", {}).get("alt")
                     alt = alt_text or self._extract_text(child.get("children", []))
                     if url:
                         img_nodes.append(ImageNode(src=url, alt=alt))
+                else:
+                    non_img_children.append(child)
+
             if img_nodes:
-                text = self._extract_text(sub_children)
-                if not text or text == child.get("attrs", {}).get("alt", ""):
+                text = self._extract_text(non_img_children).strip()
+                if not text:
                     return img_nodes
-                # If paragraph has both text and image
                 return [ParagraphNode(content=text)] + img_nodes
 
             text = self._extract_text(sub_children)
@@ -103,7 +111,11 @@ class DefaultMarkdownParser:
             return HeadingNode(level=level, content=raw_text)
 
         if ttype == "image":
-            url = token.get("attrs", {}).get("url", token.get("src", ""))
+            url = (
+                token.get("attrs", {}).get("url")
+                or token.get("src")
+                or token.get("attrs", {}).get("src", "")
+            )
             alt = token.get("attrs", {}).get("alt") or self._extract_text(token.get("children", []))
             return ImageNode(src=url, alt=alt) if url else None
 

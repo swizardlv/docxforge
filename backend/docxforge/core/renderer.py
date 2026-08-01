@@ -182,7 +182,7 @@ class DefaultRenderer:
                 BatchItem(
                     command="add",
                     parent=parent,
-                    type="image",
+                    type="picture",
                     props=props,
                 )
             )

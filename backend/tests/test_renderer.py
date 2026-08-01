@@ -34,7 +34,7 @@ def test_renderer_image_node() -> None:
 
     assert len(items) == 1
     assert items[0].command == "add"
-    assert items[0].type == "image"
+    assert items[0].type == "picture"
     assert items[0].props["src"] == "/path/to/img.png"
     assert items[0].props["alt"] == "说明"
 
