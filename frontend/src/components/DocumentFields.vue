@@ -8,6 +8,7 @@ import { useForgeStore } from '@/stores/forge'
 const store = useForgeStore()
 const titleId = useId()
 const filenameId = useId()
+const baseDirId = useId()
 </script>
 
 <template>
@@ -45,6 +46,23 @@ const filenameId = useId()
           无需填写扩展名，后端固定输出 .docx。
         </p>
       </div>
+    </div>
+
+    <div>
+      <label
+        :for="baseDirId"
+        class="df-label"
+      >图片基准目录 (Base Directory)</label>
+      <input
+        :id="baseDirId"
+        v-model="store.baseDir"
+        class="df-control font-mono text-xs"
+        type="text"
+        placeholder="例如：/Users/username/documents/project"
+      >
+      <p class="df-hint">
+        Markdown 中包含本地相对路径图片（如 ./images/pic.png）时，指定该绝对路径以解析图片。Base64 与绝对路径图片无需配置。
+      </p>
     </div>
 
     <div class="rounded-md border border-line-soft bg-surface-muted p-3">

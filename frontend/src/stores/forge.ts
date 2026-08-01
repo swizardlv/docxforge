@@ -58,6 +58,7 @@ export const useForgeStore = defineStore('forge', () => {
   const markdown = ref(SAMPLE_MARKDOWN)
   const docTitle = ref('XX市智能化项目投标书')
   const filename = ref('')
+  const baseDir = ref('')
   const templateId = ref<string | null>(null)
   const toc = ref(defaultTocOptions())
   const headerFooter = ref(defaultHeaderFooterOptions())
@@ -255,6 +256,7 @@ export const useForgeStore = defineStore('forge', () => {
       },
       options: { ...options.value },
       filename: stem,
+      base_dir: baseDir.value.trim() || null,
     }
   }
 
@@ -387,6 +389,7 @@ export const useForgeStore = defineStore('forge', () => {
     markdown,
     docTitle,
     filename,
+    baseDir,
     toc,
     headerFooter,
     options,

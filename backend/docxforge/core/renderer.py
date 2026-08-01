@@ -1,6 +1,8 @@
-"""DocumentAST to OfficeCLI batch items renderer implementation."""
-
-from __future__ import annotations
+import base64
+import hashlib
+import re
+import tempfile
+from pathlib import Path
 
 from docxforge.models import (
     ASTNode,
@@ -15,6 +17,56 @@ from docxforge.models import (
     TableNode,
 )
 
+BASE64_IMAGE_PATTERN = re.compile(
+    r"^data:image/(?P<ext>[a-zA-Z0-9]+);base64,(?P<data>.+)$", re.DOTALL
+)
+
+
+def resolve_image_source(
+    src: str,
+    *,
+    workdir: Path | None = None,
+    base_dir: str | Path | None = None,
+) -> str:
+    """Resolves Base64 data URIs, absolute paths, and relative paths to local files."""
+    if not src:
+        return src
+
+    # 1. Base64 inline image
+    b64_match = BASE64_IMAGE_PATTERN.match(src.strip())
+    if b64_match:
+        ext = b64_match.group("ext") or "png"
+        raw_b64 = b64_match.group("data")
+        try:
+            img_bytes = base64.b64decode(raw_b64)
+            sha = hashlib.md5(img_bytes).hexdigest()[:10]
+            out_dir = workdir or Path(tempfile.gettempdir())
+            out_dir.mkdir(parents=True, exist_ok=True)
+            target = out_dir / f"img_embed_{sha}.{ext}"
+            if not target.exists():
+                target.write_bytes(img_bytes)
+            return str(target.resolve())
+        except Exception:
+            return src
+
+    # 2. Local absolute path
+    p = Path(src)
+    if p.is_absolute():
+        if p.exists():
+            return str(p.resolve())
+
+    # 3. Relative path with base_dir
+    if base_dir:
+        rel_target = Path(base_dir) / src
+        if rel_target.exists():
+            return str(rel_target.resolve())
+
+    # 4. Fallback check
+    if p.exists():
+        return str(p.resolve())
+
+    return src
+
 
 class DefaultRenderer:
     """Production implementation of Renderer Protocol."""
@@ -25,15 +77,33 @@ class DefaultRenderer:
         style_map: StyleMap,
         *,
         parent: str = "/body",
+        workdir: Path | None = None,
+        base_dir: str | Path | None = None,
     ) -> list[BatchItem]:
         items: list[BatchItem] = []
 
         for node in ast.nodes:
-            items.extend(self._render_node(node, style_map, parent=parent))
+            items.extend(
+                self._render_node(
+                    node,
+                    style_map,
+                    parent=parent,
+                    workdir=workdir,
+                    base_dir=base_dir,
+                )
+            )
 
         return items
 
-    def _render_node(self, node: ASTNode, style_map: StyleMap, *, parent: str) -> list[BatchItem]:
+    def _render_node(
+        self,
+        node: ASTNode,
+        style_map: StyleMap,
+        *,
+        parent: str,
+        workdir: Path | None = None,
+        base_dir: str | Path | None = None,
+    ) -> list[BatchItem]:
         items: list[BatchItem] = []
 
         if isinstance(node, HeadingNode):
@@ -102,7 +172,10 @@ class DefaultRenderer:
             )
 
         elif isinstance(node, ImageNode):
-            props = {"src": node.src}
+            resolved_src = resolve_image_source(
+                node.src, workdir=workdir, base_dir=base_dir
+            )
+            props = {"src": resolved_src}
             if node.alt:
                 props["alt"] = node.alt
             items.append(

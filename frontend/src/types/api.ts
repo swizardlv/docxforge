@@ -107,6 +107,7 @@ export interface RenderRequest {
   options: RenderOptions
   /** Output filename stem; the pipeline always writes `.docx`. */
   filename?: string | null
+  base_dir?: string | null
 }
 
 export interface RenderResponse {

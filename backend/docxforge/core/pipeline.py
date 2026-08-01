@@ -57,7 +57,13 @@ class DefaultRenderPipeline:
 
             # 3. Resolve StyleMap and build body commands
             style_map = self.template_engine.style_map_for(request.template_id)
-            body_items = self.renderer.build_commands(ast, style_map, parent="/body")
+            body_items = self.renderer.build_commands(
+                ast,
+                style_map,
+                parent="/body",
+                workdir=workdir,
+                base_dir=request.base_dir,
+            )
 
             # 4. Build assembler commands
             assembler_items: list[BatchItem] = []

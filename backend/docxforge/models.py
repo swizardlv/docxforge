@@ -309,6 +309,8 @@ class RenderRequest(BaseModel):
     options: RenderOptions = Field(default_factory=RenderOptions)
     #: Output filename stem; the pipeline always writes ``.docx``.
     filename: str | None = None
+    #: Base directory for resolving local relative image paths.
+    base_dir: str | None = None
 
 
 class RenderResult(BaseModel):
