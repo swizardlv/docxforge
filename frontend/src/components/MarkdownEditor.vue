@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, useId } from 'vue'
+import { computed, nextTick, onMounted, ref, useId } from 'vue'
 
 const model = defineModel<string>({ required: true })
 
@@ -11,6 +11,13 @@ const gutterRef = ref<HTMLDivElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const folderInputRef = ref<HTMLInputElement | null>(null)
 const isDragging = ref(false)
+
+onMounted(() => {
+  if (folderInputRef.value) {
+    folderInputRef.value.setAttribute('webkitdirectory', '')
+    folderInputRef.value.setAttribute('directory', '')
+  }
+})
 
 const lines = computed(() => model.value.split('\n').length)
 const characters = computed(() => model.value.length)
@@ -40,8 +47,51 @@ function triggerFileImport(): void {
   fileInputRef.value?.click()
 }
 
-function triggerFolderImport(): void {
+async function triggerFolderImport(): Promise<void> {
+  // 1. Try Native Chrome / Edge File System Access API first for seamless picker
+  if ('showDirectoryPicker' in window && typeof window.showDirectoryPicker === 'function') {
+    try {
+      const dirHandle = await (window as unknown as { showDirectoryPicker: () => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker()
+      const files = await readDirectoryHandle(dirHandle)
+      if (files.length > 0) {
+        await processFileList(files)
+        return
+      }
+    } catch {
+      // User cancelled picker or browser restriction -> fallback to input click
+    }
+  }
+
+  // 2. Fallback to webkitdirectory file input
   folderInputRef.value?.click()
+}
+
+/** Recursively extracts files from a FileSystemDirectoryHandle (Chrome 86+) */
+async function readDirectoryHandle(
+  dirHandle: FileSystemDirectoryHandle,
+  path = '',
+): Promise<File[]> {
+  const files: File[] = []
+  for await (const entry of (dirHandle as unknown as AsyncIterable<FileSystemHandle>)) {
+    if (entry.kind === 'file') {
+      const fileHandle = entry as FileSystemFileHandle
+      const file = await fileHandle.getFile()
+      // Attach webkitRelativePath simulation
+      Object.defineProperty(file, 'webkitRelativePath', {
+        value: path ? `${path}/${file.name}` : file.name,
+        writable: false,
+      })
+      files.push(file)
+    } else if (entry.kind === 'directory') {
+      const subDirHandle = entry as FileSystemDirectoryHandle
+      const subFiles = await readDirectoryHandle(
+        subDirHandle,
+        path ? `${path}/${entry.name}` : entry.name,
+      )
+      files.push(...subFiles)
+    }
+  }
+  return files
 }
 
 function handleFileImport(event: Event): void {
