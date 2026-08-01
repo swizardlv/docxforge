@@ -25,3 +25,16 @@ def test_parse_markdown_basic(sample_markdown: str) -> None:
     tables = [node for node in ast.nodes if isinstance(node, TableNode)]
     assert len(tables) == 1
     assert len(tables[0].headers) == 3
+
+
+def test_parse_markdown_image() -> None:
+    parser = DefaultMarkdownParser()
+    md = "# 架构图\n\n![系统架构示意图](https://example.com/arch.png)\n"
+    ast = parser.parse(md)
+
+    from docxforge.models import ImageNode
+
+    images = [node for node in ast.nodes if isinstance(node, ImageNode)]
+    assert len(images) == 1
+    assert images[0].src == "https://example.com/arch.png"
+    assert images[0].alt == "系统架构示意图"

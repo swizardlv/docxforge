@@ -8,6 +8,7 @@ const props = withDefaults(defineProps<{ disabled?: boolean }>(), { disabled: fa
 const editorId = useId()
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const gutterRef = ref<HTMLDivElement | null>(null)
+const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const lines = computed(() => model.value.split('\n').length)
 const characters = computed(() => model.value.length)
@@ -32,14 +33,52 @@ async function handleTab(event: KeyboardEvent): Promise<void> {
   await nextTick()
   el.selectionStart = el.selectionEnd = selectionStart + indent.length
 }
+
+function triggerImport(): void {
+  fileInputRef.value?.click()
+}
+
+function handleFileImport(event: Event): void {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    const text = e.target?.result
+    if (typeof text === 'string') {
+      model.value = text
+    }
+  }
+  reader.readAsText(file, 'utf-8')
+  // Reset input
+  target.value = ''
+}
 </script>
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <label
-      :for="editorId"
-      class="df-label"
-    >Markdown 正文</label>
+    <div class="flex items-center justify-between pb-1.5">
+      <label
+        :for="editorId"
+        class="df-label !pb-0"
+      >Markdown 正文</label>
+      <button
+        type="button"
+        :disabled="disabled"
+        class="text-xs text-accent hover:text-accent-hover disabled:opacity-50"
+        @click="triggerImport"
+      >
+        📄 导入 Markdown 文件
+      </button>
+      <input
+        ref="fileInputRef"
+        type="file"
+        accept=".md,.markdown,.txt"
+        class="hidden"
+        @change="handleFileImport"
+      >
+    </div>
     <div
       class="flex min-h-0 flex-1 overflow-hidden rounded-md border border-line bg-surface focus-within:border-accent"
     >
@@ -52,7 +91,6 @@ async function handleTab(event: KeyboardEvent): Promise<void> {
         <div
           v-for="n in lines"
           :key="n"
-          class="pr-2 tabular-nums"
         >
           {{ n }}
         </div>
@@ -77,7 +115,7 @@ async function handleTab(event: KeyboardEvent): Promise<void> {
       :id="`${editorId}-hint`"
       class="df-hint flex items-center justify-between"
     >
-      <span>支持 H1-H6、列表、表格、引用与代码块；Tab 键插入两个空格。</span>
+      <span>支持 H1-H6、列表、表格、图片 (![alt](src)) 与代码块。</span>
       <span class="font-mono tabular-nums">{{ lines }} 行 · {{ characters }} 字符</span>
     </p>
   </div>

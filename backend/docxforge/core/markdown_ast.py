@@ -10,6 +10,7 @@ from docxforge.models import (
     CodeNode,
     DocumentAST,
     HeadingNode,
+    ImageNode,
     ListItem,
     ListNode,
     PageBreakNode,
@@ -49,8 +50,8 @@ class DefaultMarkdownParser:
         extracted_title = doc_title
 
         for tok in tokens:
-            node = self._convert_token(tok)
-            if node:
+            nodes = self._convert_token_multi(tok)
+            for node in nodes:
                 if isinstance(node, HeadingNode) and node.level == 1 and not extracted_title:
                     extracted_title = node.content
                 children.append(node)
@@ -61,6 +62,38 @@ class DefaultMarkdownParser:
             nodes=children,
         )
 
+    def _convert_token_multi(self, token: dict) -> list[ASTNode]:
+        node = self._convert_token(token)
+        if node:
+            return [node]
+
+        ttype = token.get("type")
+        if ttype == "paragraph":
+            sub_children = token.get("children", [])
+            img_nodes: list[ASTNode] = []
+            for child in sub_children:
+                if isinstance(child, dict) and child.get("type") == "image":
+                    url = child.get("attrs", {}).get("url", child.get("src", ""))
+                    alt_text = child.get("attrs", {}).get("alt")
+                    alt = alt_text or self._extract_text(child.get("children", []))
+                    if url:
+                        img_nodes.append(ImageNode(src=url, alt=alt))
+            if img_nodes:
+                text = self._extract_text(sub_children)
+                if not text or text == child.get("attrs", {}).get("alt", ""):
+                    return img_nodes
+                # If paragraph has both text and image
+                return [ParagraphNode(content=text)] + img_nodes
+
+            text = self._extract_text(sub_children)
+            if text == "---" or text == "***":
+                return [ThematicBreakNode()]
+            if "[pagebreak]" in text.lower():
+                return [PageBreakNode()]
+            return [ParagraphNode(content=text)]
+
+        return []
+
     def _convert_token(self, token: dict) -> ASTNode | None:
         ttype = token.get("type")
 
@@ -69,13 +102,10 @@ class DefaultMarkdownParser:
             raw_text = self._extract_text(token.get("children", []))
             return HeadingNode(level=level, content=raw_text)
 
-        if ttype == "paragraph":
-            text = self._extract_text(token.get("children", []))
-            if text == "---" or text == "***":
-                return ThematicBreakNode()
-            if "[pagebreak]" in text.lower():
-                return PageBreakNode()
-            return ParagraphNode(content=text)
+        if ttype == "image":
+            url = token.get("attrs", {}).get("url", token.get("src", ""))
+            alt = token.get("attrs", {}).get("alt") or self._extract_text(token.get("children", []))
+            return ImageNode(src=url, alt=alt) if url else None
 
         if ttype == "list":
             ordered = token.get("attrs", {}).get("ordered", False)

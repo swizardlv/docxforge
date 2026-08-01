@@ -8,9 +8,9 @@ from docxforge.models import (
     CodeNode,
     DocumentAST,
     HeadingNode,
+    ImageNode,
     ListNode,
     ParagraphNode,
-    QuoteNode,
     StyleMap,
     TableNode,
 )
@@ -101,14 +101,16 @@ class DefaultRenderer:
                 )
             )
 
-        elif isinstance(node, QuoteNode):
-            style_name = style_map.quote
+        elif isinstance(node, ImageNode):
+            props = {"src": node.src}
+            if node.alt:
+                props["alt"] = node.alt
             items.append(
                 BatchItem(
                     command="add",
                     parent=parent,
-                    type="paragraph",
-                    props={"text": node.content, "style": style_name},
+                    type="image",
+                    props=props,
                 )
             )
 
