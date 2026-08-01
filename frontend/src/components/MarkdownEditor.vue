@@ -120,29 +120,41 @@ async function handleFolderImport(event: Event): Promise<void> {
   target.value = ''
 }
 
+interface MarkdownFileInfo {
+  name: string
+  path: string
+  content: string
+}
+
+const mdFiles = ref<MarkdownFileInfo[]>([])
+const selectedMdKey = ref<string>('__ALL__')
+
 async function processFileList(files: File[]): Promise<void> {
-  let mdFile: File | null = null
+  const mdFileList: File[] = []
   const imageFiles: File[] = []
 
   for (const file of files) {
     const lowerName = file.name.toLowerCase()
     if (lowerName.endsWith('.md') || lowerName.endsWith('.markdown')) {
-      if (!mdFile || lowerName === 'readme.md' || lowerName === 'index.md') {
-        mdFile = file
-      }
+      mdFileList.push(file)
     } else if (/\.(png|jpe?g|gif|webp|svg)$/i.test(file.name)) {
       imageFiles.push(file)
     }
   }
 
-  if (!mdFile) {
+  if (mdFileList.length === 0) {
     return
   }
 
-  const mdText = await mdFile.text()
-  const imageMap = new Map<string, string>()
+  // 1. Natural sort for Markdown files
+  mdFileList.sort((a, b) => {
+    const pathA = a.webkitRelativePath || a.name
+    const pathB = b.webkitRelativePath || b.name
+    return pathA.localeCompare(pathB, undefined, { numeric: true, sensitivity: 'base' })
+  })
 
-  // Read images as Base64 Data URIs
+  // 2. Read images as Base64 Data URIs
+  const imageMap = new Map<string, string>()
   for (const imgFile of imageFiles) {
     const dataUri = await fileToDataUri(imgFile)
     const relPath = imgFile.webkitRelativePath
@@ -152,20 +164,50 @@ async function processFileList(files: File[]): Promise<void> {
     imageMap.set(imgFile.name.toLowerCase(), dataUri)
   }
 
-  // Replace relative image references with inline Data URIs
-  const processedMd = mdText.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, src: string) => {
-    if (src.startsWith('data:') || src.startsWith('http://') || src.startsWith('https://')) {
+  // Helper to replace images in a Markdown text
+  const replaceImages = (rawText: string) => {
+    return rawText.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, src: string) => {
+      if (src.startsWith('data:') || src.startsWith('http://') || src.startsWith('https://')) {
+        return match
+      }
+      const cleanSrc = src.trim().replace(/^\.\//, '').toLowerCase()
+      const foundDataUri = imageMap.get(cleanSrc) || imageMap.get(cleanSrc.split('/').pop() ?? '')
+      if (foundDataUri) {
+        return `![${alt}](${foundDataUri})`
+      }
       return match
-    }
-    const cleanSrc = src.trim().replace(/^\.\//, '').toLowerCase()
-    const foundDataUri = imageMap.get(cleanSrc) || imageMap.get(cleanSrc.split('/').pop() ?? '')
-    if (foundDataUri) {
-      return `![${alt}](${foundDataUri})`
-    }
-    return match
-  })
+    })
+  }
 
-  model.value = processedMd
+  // 3. Store parsed markdown file list
+  const parsedFiles: MarkdownFileInfo[] = []
+  for (const file of mdFileList) {
+    const text = await file.text()
+    const path = file.webkitRelativePath || file.name
+    parsedFiles.push({
+      name: file.name,
+      path,
+      content: replaceImages(text),
+    })
+  }
+
+  mdFiles.value = parsedFiles
+  selectedMdKey.value = '__ALL__'
+
+  applyMdSelection()
+}
+
+function applyMdSelection(): void {
+  if (mdFiles.value.length === 0) return
+
+  if (selectedMdKey.value === '__ALL__') {
+    model.value = mdFiles.value.map((f) => f.content).join('\n\n')
+  } else {
+    const target = mdFiles.value.find((f) => f.path === selectedMdKey.value)
+    if (target) {
+      model.value = target.content
+    }
+  }
 }
 
 /** Handle Cmd+V / Ctrl+V image paste */
@@ -235,6 +277,30 @@ function fileToDataUri(file: File): Promise<string> {
         class="df-label !pb-0"
       >Markdown 正文</label>
       <div class="flex items-center gap-2">
+        <!-- Multi-markdown selector -->
+        <div
+          v-if="mdFiles.length > 1"
+          class="flex items-center gap-1.5 rounded bg-surface-muted px-2 py-0.5 border border-line text-xs"
+        >
+          <span class="text-ink-muted">📚 已检测到 {{ mdFiles.length }} 个 Markdown 文件:</span>
+          <select
+            v-model="selectedMdKey"
+            class="bg-transparent font-medium text-accent outline-none cursor-pointer"
+            @change="applyMdSelection"
+          >
+            <option value="__ALL__">
+              ✨ 自动按顺序合并所有文件 (共 {{ mdFiles.length }} 个)
+            </option>
+            <option
+              v-for="file in mdFiles"
+              :key="file.path"
+              :value="file.path"
+            >
+              📄 {{ file.path }}
+            </option>
+          </select>
+        </div>
+
         <button
           type="button"
           :disabled="disabled"
