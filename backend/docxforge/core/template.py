@@ -149,27 +149,46 @@ class DefaultTemplateEngine:
         shutil.copy2(src_docx, dest)
 
         # Clear sample body content, keeping the cover section when present.
-        # `query /body/*` is not a valid CSS selector in officecli (it matches
-        # nothing), so body children are enumerated via `get /body --depth 1`.
+        # IMPORTANT: We re-query after every removal because deleting an element
+        # with a numeric index (e.g. /body/tbl[1]) renumbers all subsequent
+        # indices of the same type — a snapshot of paths from before the loop
+        # would point to wrong elements after the first structural removal.
         try:
-            body_data = self.runner.get(dest, "/body", depth=1)
-            results = body_data.get("data", {}).get("results", [])
-            children = results[0].get("children", []) if results else []
             keep = template_info.cover_paragraph_count if template_info.has_cover else 0
-            kept = 0
-            for child in children:
-                path = child.get("path")
-                if not path or child.get("type") in ("sectPr", "section"):
-                    # Never remove the section properties; the document needs
-                    # them for page size / margins.
-                    continue
-                if kept < keep:
-                    kept += 1
-                    continue
+            while True:
+                body_data = self.runner.get(dest, "/body", depth=1)
+                results = body_data.get("data", {}).get("results", [])
+                children = results[0].get("children", []) if results else []
+                target: str | None = None
+                kept = 0
+                for child in children:
+                    path = child.get("path")
+                    if not path or child.get("type") in ("sectPr", "section"):
+                        continue
+                    if kept < keep:
+                        kept += 1
+                        continue
+                    target = path
+                    break
+                if target is None:
+                    break
                 try:
-                    self.runner.remove(dest, path)
+                    self.runner.remove(dest, target)
                 except Exception:
-                    pass
+                    # If the element resists deletion (e.g. a stray path) we
+                    # must stop to avoid an infinite loop.
+                    break
+        except Exception:
+            pass
+
+        # Whether the template already carries header/footer parts. officecli
+        # rejects adding a second 'default' header/footer in one section, so
+        # the assembler must update the existing part instead.
+        has_header = False
+        has_footer = False
+        try:
+            has_header = bool(self.runner.query(dest, "header"))
+            has_footer = bool(self.runner.query(dest, "footer"))
         except Exception:
             pass
 
@@ -180,6 +199,8 @@ class DefaultTemplateEngine:
             if template_info.has_cover
             else 0,
             body_cleared=True,
+            has_header=has_header,
+            has_footer=has_footer,
             style_map=template_info.style_map,
         )
 

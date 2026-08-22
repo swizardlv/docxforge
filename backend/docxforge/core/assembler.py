@@ -67,41 +67,60 @@ class DefaultDocumentAssembler:
     ) -> list[BatchItem]:
         items: list[BatchItem] = []
         if options.header_text:
-            # A fresh document has no header part: create it first, then add
-            # the paragraph inside it.
-            items.append(
-                BatchItem(
-                    command="add",
-                    parent="/",
-                    type="header",
-                    props={"type": "default"},
+            if base.has_header:
+                # Template already has a header part; update its text instead
+                # of adding a duplicate (officecli rejects a second default
+                # header in one section).
+                items.append(
+                    BatchItem(
+                        command="set",
+                        path="/header[1]/p[1]",
+                        props={"text": options.header_text},
+                    )
                 )
-            )
-            items.append(
-                BatchItem(
-                    command="add",
-                    parent="/header[1]",
-                    type="paragraph",
-                    props={"text": options.header_text, "style": "Header"},
+            else:
+                items.append(
+                    BatchItem(
+                        command="add",
+                        parent="/",
+                        type="header",
+                        props={"type": "default"},
+                    )
                 )
-            )
+                items.append(
+                    BatchItem(
+                        command="add",
+                        parent="/header[1]",
+                        type="paragraph",
+                        props={"text": options.header_text, "style": "Header"},
+                    )
+                )
         if options.footer_text:
-            items.append(
-                BatchItem(
-                    command="add",
-                    parent="/",
-                    type="footer",
-                    props={"type": "default"},
+            if base.has_footer:
+                items.append(
+                    BatchItem(
+                        command="set",
+                        path="/footer[1]/p[1]",
+                        props={"text": options.footer_text},
+                    )
                 )
-            )
-            items.append(
-                BatchItem(
-                    command="add",
-                    parent="/footer[1]",
-                    type="paragraph",
-                    props={"text": options.footer_text, "style": "Footer"},
+            else:
+                items.append(
+                    BatchItem(
+                        command="add",
+                        parent="/",
+                        type="footer",
+                        props={"type": "default"},
+                    )
                 )
-            )
+                items.append(
+                    BatchItem(
+                        command="add",
+                        parent="/footer[1]",
+                        type="paragraph",
+                        props={"text": options.footer_text, "style": "Footer"},
+                    )
+                )
         return items
 
     def settings_commands(self, *, update_fields: bool) -> list[BatchItem]:

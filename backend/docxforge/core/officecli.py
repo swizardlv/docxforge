@@ -163,6 +163,12 @@ class DefaultOfficeCLIRunner:
             return []
         try:
             parsed = json.loads(out)
+            if (
+                isinstance(parsed, dict)
+                and parsed.get("success")
+                and isinstance(parsed.get("data"), dict)
+            ):
+                return parsed["data"].get("results", [])
             return parsed if isinstance(parsed, list) else [parsed]
         except json.JSONDecodeError:
             return []

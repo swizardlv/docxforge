@@ -73,12 +73,21 @@ class DefaultRenderPipeline:
                     )
                 ]
             else:
+                # Count existing tables in the base document so the renderer
+                # can correctly index new tables past them (removing template
+                # content renumbers tbl[N] indices, but retained cover tables
+                # still occupy the first N slots).
+                try:
+                    table_offset = len(self.runner.query(output_file, "table"))
+                except Exception:
+                    table_offset = 0
                 body_items = self.renderer.build_commands(
                     ast,
                     style_map,
                     parent="/body",
                     workdir=workdir,
                     base_dir=request.base_dir,
+                    table_offset=table_offset,
                 )
 
             # 4. Build assembler commands. Cover and TOC run BEFORE the body so
@@ -122,7 +131,11 @@ class DefaultRenderPipeline:
                         warnings.append(f"OpenXML 校验发现 {len(issues)} 个问题")
                         warnings.extend(issues[:5])
             finally:
-                self.runner.close(output_file)
+                # Best-effort flush: never mask the original batch failure.
+                try:
+                    self.runner.close(output_file)
+                except Exception:
+                    pass
 
             elapsed_ms = int((time.perf_counter() - start_time) * 1000)
 
@@ -139,4 +152,7 @@ class DefaultRenderPipeline:
         except Exception as exc:
             if isinstance(exc, RenderError):
                 raise exc
-            raise RenderError(f"Render failed for job {job_id}: {exc}") from exc
+            # Preserve the underlying officecli stderr (e.g. the failing batch
+            # command) so the API error response is actionable.
+            detail = getattr(exc, "detail", None) or str(exc)
+            raise RenderError(f"Render failed for job {job_id}: {exc}", detail=detail) from exc

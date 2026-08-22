@@ -81,11 +81,14 @@ class DefaultRenderer:
         parent: str = "/body",
         workdir: Path | None = None,
         base_dir: str | Path | None = None,
+        table_offset: int = 0,
     ) -> list[BatchItem]:
         items: list[BatchItem] = []
         #: Mutable 1-based table counter; officecli addresses tables as
         #: ``/body/tbl[N]`` where N counts tables only, not all body elements.
-        table_seq: list[int] = [0]
+        #: ``table_offset`` is the number of tables the base document already
+        #: carries (e.g. kept cover tables), so new tables index past them.
+        table_seq: list[int] = [table_offset]
 
         for node in ast.nodes:
             items.extend(

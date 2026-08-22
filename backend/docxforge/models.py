@@ -244,6 +244,11 @@ class PreparedBase(BaseModel):
     cover_paragraph_count: int = 0
     #: True when the template body was cleared of sample content.
     body_cleared: bool = False
+    #: The template already carries header/footer parts. When true the
+    #: assembler must update the existing part instead of adding a new one
+    #: (officecli rejects a second 'default' header/footer in one section).
+    has_header: bool = False
+    has_footer: bool = False
     style_map: StyleMap = Field(default_factory=StyleMap)
     warnings: list[str] = Field(default_factory=list)
 
