@@ -12,7 +12,9 @@ from docxforge.models import (
     HeadingNode,
     ImageNode,
     ListNode,
+    PageBreakNode,
     ParagraphNode,
+    QuoteNode,
     StyleMap,
     TableNode,
 )
@@ -81,6 +83,9 @@ class DefaultRenderer:
         base_dir: str | Path | None = None,
     ) -> list[BatchItem]:
         items: list[BatchItem] = []
+        #: Mutable 1-based table counter; officecli addresses tables as
+        #: ``/body/tbl[N]`` where N counts tables only, not all body elements.
+        table_seq: list[int] = [0]
 
         for node in ast.nodes:
             items.extend(
@@ -90,6 +95,7 @@ class DefaultRenderer:
                     parent=parent,
                     workdir=workdir,
                     base_dir=base_dir,
+                    table_seq=table_seq,
                 )
             )
 
@@ -103,11 +109,12 @@ class DefaultRenderer:
         parent: str,
         workdir: Path | None = None,
         base_dir: str | Path | None = None,
+        table_seq: list[int] | None = None,
     ) -> list[BatchItem]:
         items: list[BatchItem] = []
 
         if isinstance(node, HeadingNode):
-            style_name = getattr(style_map, f"heading_{node.level}", f"Heading{node.level}")
+            style_name = style_map.heading(node.level)
             items.append(
                 BatchItem(
                     command="add",
@@ -130,13 +137,19 @@ class DefaultRenderer:
 
         elif isinstance(node, ListNode):
             style_name = style_map.list_ordered if node.ordered else style_map.list_bullet
+            list_style_prop = "ordered" if node.ordered else "bullet"
             for item in node.items:
+                props: dict[str, str] = {"text": item.content, "style": style_name}
+                if item.level > 0:
+                    # Native multi-level list: numLevel needs listStyle to be effective.
+                    props["listStyle"] = list_style_prop
+                    props["numLevel"] = str(item.level)
                 items.append(
                     BatchItem(
                         command="add",
                         parent=parent,
                         type="paragraph",
-                        props={"text": item.content, "style": style_name},
+                        props=props,
                     )
                 )
 
@@ -146,6 +159,9 @@ class DefaultRenderer:
                 len(node.headers) if node.headers else (len(node.rows[0]) if node.rows else 0)
             )
             if rows_count > 0 and cols_count > 0:
+                tbl_seq = table_seq if table_seq is not None else [0]
+                tbl_seq[0] += 1
+                tbl_index = tbl_seq[0]
                 tbl_style = style_map.table
                 items.append(
                     BatchItem(
@@ -159,6 +175,51 @@ class DefaultRenderer:
                         },
                     )
                 )
+
+                # Repeat the header row on every page, then fill every cell.
+                if node.headers:
+                    items.append(
+                        BatchItem(
+                            command="set",
+                            path=f"{parent}/tbl[{tbl_index}]/tr[1]",
+                            props={"header": "true"},
+                        )
+                    )
+                rows_data: list[list[str]] = (
+                    ([node.headers] if node.headers else []) + node.rows
+                )
+                for r, row in enumerate(rows_data, start=1):
+                    for c, cell_text in enumerate(row[:cols_count], start=1):
+                        if not cell_text:
+                            continue
+                        items.append(
+                            BatchItem(
+                                command="set",
+                                path=f"{parent}/tbl[{tbl_index}]/tr[{r}]/tc[{c}]",
+                                props={"text": cell_text},
+                            )
+                        )
+
+        elif isinstance(node, QuoteNode):
+            style_name = style_map.quote
+            items.append(
+                BatchItem(
+                    command="add",
+                    parent=parent,
+                    type="paragraph",
+                    props={"text": node.content, "style": style_name},
+                )
+            )
+
+        elif isinstance(node, PageBreakNode):
+            items.append(
+                BatchItem(
+                    command="add",
+                    parent=parent,
+                    type="pagebreak",
+                    props={"type": "page"},
+                )
+            )
 
         elif isinstance(node, CodeNode):
             style_name = style_map.code

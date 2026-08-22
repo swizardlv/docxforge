@@ -38,7 +38,7 @@ class DefaultMarkdownParser:
             return DocumentAST(
                 doc_title=doc_title,
                 template_id=template_id,
-                children=[],
+                nodes=[],
             )
 
         try:
@@ -120,13 +120,7 @@ class DefaultMarkdownParser:
             return ImageNode(src=url, alt=alt) if url else None
 
         if ttype == "list":
-            ordered = token.get("attrs", {}).get("ordered", False)
-            items_tok = token.get("children", [])
-            items: list[ListItem] = []
-            for it in items_tok:
-                it_text = self._extract_text(it.get("children", []))
-                items.append(ListItem(content=it_text))
-            return ListNode(ordered=ordered, items=items)
+            return self._convert_list(token)
 
         if ttype == "table":
             return self._convert_table(token)
@@ -145,6 +139,30 @@ class DefaultMarkdownParser:
 
         return None
 
+    def _convert_list(self, token: dict) -> ListNode:
+        ordered = token.get("attrs", {}).get("ordered", False)
+        items: list[ListItem] = []
+        self._collect_list_items(token, items, level=0)
+        return ListNode(ordered=ordered, items=items)
+
+    def _collect_list_items(
+        self, token: dict, items: list[ListItem], *, level: int
+    ) -> None:
+        for it in token.get("children", []):
+            if not isinstance(it, dict) or it.get("type") != "list_item":
+                continue
+            text_parts: list[object] = []
+            nested_tokens: list[dict] = []
+            for child in it.get("children", []):
+                if isinstance(child, dict) and child.get("type") == "list":
+                    nested_tokens.append(child)
+                else:
+                    text_parts.append(child)
+            content = self._extract_text(text_parts).strip()
+            items.append(ListItem(content=content, level=level))
+            for nested in nested_tokens:
+                self._collect_list_items(nested, items, level=level + 1)
+
     def _convert_table(self, token: dict) -> TableNode:
         children = token.get("children", [])
         headers: list[str] = []
@@ -153,9 +171,10 @@ class DefaultMarkdownParser:
         for child in children:
             ctype = child.get("type")
             if ctype == "table_head":
-                for row_tok in child.get("children", []):
-                    for cell in row_tok.get("children", []):
-                        headers.append(self._extract_text(cell.get("children", [])))
+                # mistune 3: table_head children are table_cell directly (no
+                # table_row wrapper), unlike table_body which nests rows.
+                for cell in child.get("children", []):
+                    headers.append(self._extract_text(cell.get("children", [])))
             elif ctype == "table_body":
                 for row_tok in child.get("children", []):
                     row_cells: list[str] = []

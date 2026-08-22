@@ -177,6 +177,15 @@ class DefaultOfficeCLIRunner:
         res = self._run(args)
         return res.stdout
 
+    @staticmethod
+    def _unwrap_dump(payload: object) -> list[dict[str, Any]]:
+        """Extract the batch-command array from officecli's ``dump --json`` envelope."""
+        if isinstance(payload, dict):
+            if payload.get("success") and isinstance(payload.get("data"), list):
+                return payload["data"]
+            return [payload]
+        return payload if isinstance(payload, list) else [payload]
+
     def dump(self, doc: Path, path: str = "/", *, out: Path | None = None) -> list[dict[str, Any]]:
         args = ["dump", str(doc), path, "--json"]
         if out is not None:
@@ -186,16 +195,16 @@ class DefaultOfficeCLIRunner:
             return []
         out_text = res.stdout.strip()
         if out and out.exists():
-            content = out.read_text(encoding="utf-8")
             try:
+                content = out.read_text(encoding="utf-8")
                 parsed = json.loads(content)
-                return parsed if isinstance(parsed, list) else [parsed]
-            except json.JSONDecodeError:
+                return self._unwrap_dump(parsed)
+            except (json.JSONDecodeError, OSError):
                 return []
         if out_text:
             try:
                 parsed = json.loads(out_text)
-                return parsed if isinstance(parsed, list) else [parsed]
+                return self._unwrap_dump(parsed)
             except json.JSONDecodeError:
                 return []
         return []
@@ -281,8 +290,15 @@ class DefaultOfficeCLIRunner:
             data = json.loads(out)
             if isinstance(data, list):
                 return [str(item) for item in data]
-            if isinstance(data, dict) and "issues" in data:
-                return [str(i) for i in data["issues"]]
+            if isinstance(data, dict):
+                # officecli 1.0.143 envelope: {"success": true, "data": "..."}
+                if data.get("success") and isinstance(data.get("data"), str):
+                    msg = data["data"].lower()
+                    if "no error" in msg or "passed" in msg:
+                        return []
+                    return [data["data"]]
+                if "issues" in data:
+                    return [str(i) for i in data["issues"]]
             return [str(data)]
         except json.JSONDecodeError:
             return [out]

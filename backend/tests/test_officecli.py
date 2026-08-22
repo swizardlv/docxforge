@@ -76,3 +76,17 @@ def test_officecli_invalid_command(workdir: Path) -> None:
     doc = workdir / "nonexistent.docx"
     with pytest.raises(OfficeCLIError):
         runner.get(doc, "/invalid_path_xxx")
+
+
+@pytest.mark.officecli
+def test_officecli_dump_unwraps_envelope(workdir: Path) -> None:
+    runner = DefaultOfficeCLIRunner()
+    doc = workdir / "test_dump.docx"
+    runner.create(doc)
+
+    data = runner.dump(doc, "/styles")
+    # officecli 1.0.143 returns {"success": true, "data": [...]}; the runner
+    # must return the data array itself, not the envelope wrapped in a list.
+    assert isinstance(data, list)
+    assert all(isinstance(item, dict) for item in data)
+    assert any(item.get("command") for item in data)

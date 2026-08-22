@@ -42,19 +42,28 @@ class DefaultTemplateEngine:
         target_docx = tdir / "template.docx"
         shutil.copy2(source, target_docx)
 
-        # Dump extracted components via officecli dump
+        # Dump extracted components via officecli dump. officecli 1.0.143 does
+        # not support `/body/section[1]` (dump paths are limited to /, /body,
+        # /body/p[N], /body/tbl[N], /theme, /settings, /numbering, /styles),
+        # so the cover is derived from the leading run of body paragraphs.
         styles = self.runner.dump(target_docx, "/styles")
         numbering = self.runner.dump(target_docx, "/numbering")
-        cover = self.runner.dump(target_docx, "/body/section[1]")
+        body = self.runner.dump(target_docx, "/body")
+        cover_paragraph_count = self._count_leading_body_paragraphs(body)
 
         title = name or source.stem
+        warnings: list[str] = []
+        if cover_paragraph_count > 0:
+            warnings.append(f"已按正文前 {cover_paragraph_count} 个段落识别为封皮")
         info = TemplateInfo(
             template_id=tid,
             name=title,
             source_path=source,
-            has_cover=bool(cover),
+            has_cover=cover_paragraph_count > 0,
             has_numbering=bool(numbering),
+            cover_paragraph_count=cover_paragraph_count,
             created_at=datetime.now(timezone.utc),
+            warnings=warnings,
         )
 
         config_path = tdir / "template_config.json"
@@ -62,13 +71,26 @@ class DefaultTemplateEngine:
             "info": info.model_dump(mode="json"),
             "styles": styles,
             "numbering": numbering,
-            "cover": cover,
+            "cover": body,
         }
         config_path.write_text(
             json.dumps(config_data, ensure_ascii=False, indent=2), encoding="utf-8"
         )
 
         return info
+
+    @staticmethod
+    def _count_leading_body_paragraphs(body_dump: list[dict]) -> int:
+        """Count the leading run of ``add p`` commands in a /body dump."""
+        count = 0
+        for item in body_dump:
+            if not isinstance(item, dict) or item.get("command") != "add":
+                continue
+            if item.get("type") == "p":
+                count += 1
+            else:
+                break
+        return count
 
     def list_templates(self) -> list[TemplateInfo]:
         if not self.settings.templates_dir.exists():
@@ -126,17 +148,28 @@ class DefaultTemplateEngine:
 
         shutil.copy2(src_docx, dest)
 
-        # Clear sample body content (except section[1] if cover exists)
+        # Clear sample body content, keeping the cover section when present.
+        # `query /body/*` is not a valid CSS selector in officecli (it matches
+        # nothing), so body children are enumerated via `get /body --depth 1`.
         try:
-            body_elements = self.runner.query(dest, "/body/*")
-            start_index = template_info.cover_paragraph_count if template_info.has_cover else 0
-            for elem in body_elements[start_index:]:
-                path = elem.get("path")
-                if path:
-                    try:
-                        self.runner.remove(dest, path)
-                    except Exception:
-                        pass
+            body_data = self.runner.get(dest, "/body", depth=1)
+            results = body_data.get("data", {}).get("results", [])
+            children = results[0].get("children", []) if results else []
+            keep = template_info.cover_paragraph_count if template_info.has_cover else 0
+            kept = 0
+            for child in children:
+                path = child.get("path")
+                if not path or child.get("type") in ("sectPr", "section"):
+                    # Never remove the section properties; the document needs
+                    # them for page size / margins.
+                    continue
+                if kept < keep:
+                    kept += 1
+                    continue
+                try:
+                    self.runner.remove(dest, path)
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -151,4 +184,51 @@ class DefaultTemplateEngine:
         )
 
     def style_map_for(self, template_id: str | None) -> StyleMap:
-        return StyleMap()
+        """Resolve the node-kind -> Word style mapping from the template's styles.
+
+        The stored styles dump is a list of replay commands; every ``add style``
+        entry carries the OOXML style id in ``props.id``. Standard ids (Heading1,
+        Normal, ...) are kept verbatim; anything the template lacks falls back
+        to the built-in default, which officecli accepts as an alias anyway.
+        """
+        style_map = StyleMap()
+        if not template_id:
+            return style_map
+
+        config = self._read_config(template_id)
+        if config is None:
+            return style_map
+        ids = self._extract_style_ids(config.get("styles") or [])
+        if not ids:
+            return style_map
+
+        # Headings 1-6: keep the conventional id only when the template defines it.
+        headings: dict[int, str] = {}
+        for level, default_id in style_map.headings.items():
+            headings[level] = default_id if default_id in ids else default_id
+        style_map.headings = headings
+        return style_map
+
+    def _read_config(self, template_id: str) -> dict | None:
+        config_file = self._template_dir(template_id) / "template_config.json"
+        if not config_file.exists():
+            return None
+        try:
+            data = json.loads(config_file.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else None
+        except (json.JSONDecodeError, OSError):
+            return None
+
+    @staticmethod
+    def _extract_style_ids(styles: list) -> set[str]:
+        ids: set[str] = set()
+        for item in styles:
+            if not isinstance(item, dict) or item.get("command") != "add":
+                continue
+            if item.get("type") != "style":
+                continue
+            props = item.get("props") or {}
+            sid = props.get("id") or props.get("styleId")
+            if sid:
+                ids.add(str(sid))
+        return ids

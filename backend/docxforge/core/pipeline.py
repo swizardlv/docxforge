@@ -49,7 +49,7 @@ class DefaultRenderPipeline:
             # 1. Prepare base document
             prepared = self.template_engine.prepare_base(request.template_id, output_file)
 
-            # 2. Parse Markdown
+            # 2. Parse Markdown (also used for the fast_markdown source file)
             ast = self.parser.parse(
                 request.markdown,
                 template_id=request.template_id,
@@ -57,26 +57,38 @@ class DefaultRenderPipeline:
 
             # 3. Resolve StyleMap and build body commands
             style_map = self.template_engine.style_map_for(request.template_id)
-            body_items = self.renderer.build_commands(
-                ast,
-                style_map,
-                parent="/body",
-                workdir=workdir,
-                base_dir=request.base_dir,
-            )
 
-            # 4. Build assembler commands
-            assembler_items: list[BatchItem] = []
-            if request.cover:
-                assembler_items.extend(self.assembler.cover_commands(request.cover, prepared))
-
-            if request.toc:
-                assembler_items.extend(self.assembler.toc_commands(request.toc, prepared))
-
-            if request.header_footer:
-                assembler_items.extend(
-                    self.assembler.header_footer_commands(request.header_footer, prepared)
+            if request.options.fast_markdown:
+                # Native officecli markdown expansion: faster but lossy
+                # (links/images degrade to plain text). The source file lives
+                # in the ephemeral job sandbox and is shredded with the job.
+                md_source = workdir / f"{job_id}.md"
+                md_source.write_text(request.markdown, encoding="utf-8")
+                body_items = [
+                    BatchItem(
+                        command="add",
+                        parent="/",
+                        type="markdown",
+                        props={"src": str(md_source)},
+                    )
+                ]
+            else:
+                body_items = self.renderer.build_commands(
+                    ast,
+                    style_map,
+                    parent="/body",
+                    workdir=workdir,
+                    base_dir=request.base_dir,
                 )
+
+            # 4. Build assembler commands. Cover and TOC run BEFORE the body so
+            #    the appended TOC lands between the cover section and the body
+            #    content, not at the end of the document.
+            assembler_items: list[BatchItem] = []
+            if request.cover.enabled:
+                assembler_items.extend(self.assembler.cover_commands(request.cover, prepared))
+            if request.toc.enabled:
+                assembler_items.extend(self.assembler.toc_commands(request.toc, prepared))
 
             update_fields = (
                 request.options.update_fields
@@ -85,10 +97,32 @@ class DefaultRenderPipeline:
             )
             assembler_items.extend(self.assembler.settings_commands(update_fields=update_fields))
 
-            # 5. Combine and execute batch
-            all_items = body_items + assembler_items
-            if all_items:
-                self.runner.batch(output_file, all_items)
+            if request.header_footer.header_text or request.header_footer.footer_text:
+                assembler_items.extend(
+                    self.assembler.header_footer_commands(request.header_footer, prepared)
+                )
+
+            # 5. Combine and execute batch. Resident mode keeps the document in
+            #    officecli's memory for one open/save cycle (speed). Either way
+            #    we close at the end: `close` flushes any resident (from
+            #    `create`/`open`) to disk and releases it, so non-officecli
+            #    readers always see the finished file and the sandbox shredder
+            #    cannot be undone by a deferred write. It is a no-op when no
+            #    resident is active.
+            all_items = assembler_items + body_items
+            warnings: list[str] = []
+            if request.options.use_resident:
+                self.runner.open(output_file)
+            try:
+                if all_items:
+                    self.runner.batch(output_file, all_items)
+                if request.options.validate_output:
+                    issues = self.runner.validate(output_file)
+                    if issues:
+                        warnings.append(f"OpenXML 校验发现 {len(issues)} 个问题")
+                        warnings.extend(issues[:5])
+            finally:
+                self.runner.close(output_file)
 
             elapsed_ms = int((time.perf_counter() - start_time) * 1000)
 
@@ -99,7 +133,7 @@ class DefaultRenderPipeline:
                 elapsed_ms=elapsed_ms,
                 command_count=len(all_items),
                 node_count=len(ast.nodes),
-                warnings=[],
+                warnings=warnings,
             )
 
         except Exception as exc:

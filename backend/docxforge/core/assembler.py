@@ -28,6 +28,12 @@ class DefaultDocumentAssembler:
                 )
             )
 
+        # Page break between the cover section and the TOC/body.
+        if options.page_break_after and base.cover_paragraph_count > 0:
+            items.append(
+                BatchItem(command="add", parent="/body", type="pagebreak", props={"type": "page"})
+            )
+
         return items
 
     def toc_commands(self, options: TocOptions, base: PreparedBase) -> list[BatchItem]:
@@ -47,6 +53,13 @@ class DefaultDocumentAssembler:
                 },
             )
         )
+
+        # Page break between the TOC and the body content.
+        if options.page_break_after:
+            items.append(
+                BatchItem(command="add", parent="/body", type="pagebreak", props={"type": "page"})
+            )
+
         return items
 
     def header_footer_commands(
@@ -54,10 +67,20 @@ class DefaultDocumentAssembler:
     ) -> list[BatchItem]:
         items: list[BatchItem] = []
         if options.header_text:
+            # A fresh document has no header part: create it first, then add
+            # the paragraph inside it.
             items.append(
                 BatchItem(
                     command="add",
-                    parent="/header",
+                    parent="/",
+                    type="header",
+                    props={"type": "default"},
+                )
+            )
+            items.append(
+                BatchItem(
+                    command="add",
+                    parent="/header[1]",
                     type="paragraph",
                     props={"text": options.header_text, "style": "Header"},
                 )
@@ -66,7 +89,15 @@ class DefaultDocumentAssembler:
             items.append(
                 BatchItem(
                     command="add",
-                    parent="/footer",
+                    parent="/",
+                    type="footer",
+                    props={"type": "default"},
+                )
+            )
+            items.append(
+                BatchItem(
+                    command="add",
+                    parent="/footer[1]",
                     type="paragraph",
                     props={"text": options.footer_text, "style": "Footer"},
                 )
