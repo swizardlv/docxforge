@@ -156,7 +156,7 @@ function resetDraft(): void {
     class="fixed inset-0 z-50 flex items-start justify-end bg-black/20 backdrop-blur-[1px]"
     @click.self="handleClose"
   >
-    <div class="flex h-full w-full max-w-2xl flex-col bg-surface shadow-xl">
+    <div class="relative flex h-full w-full max-w-2xl flex-col bg-surface shadow-xl">
       <!-- Header -->
       <div class="flex items-center justify-between border-b border-line-soft px-4 py-3">
         <h2 class="text-base font-semibold text-ink">
@@ -237,63 +237,6 @@ function resetDraft(): void {
                 </template>
               </div>
             </div>
-
-            <!-- Edit popover -->
-            <div
-              v-if="editingFragment"
-              class="mt-3 rounded-lg border border-accent/40 bg-surface p-3 shadow-md"
-            >
-              <p class="mb-2 text-xs text-ink-muted">
-                为「{{ editingFragment.original.slice(0, 30) }}」设置替换
-              </p>
-              <label class="flex items-center gap-2 text-xs text-ink">
-                <input
-                  v-model="editMode"
-                  type="radio"
-                  value="fixed"
-                >
-                  本项目固定
-                <input
-                  v-model="editMode"
-                  type="radio"
-                  value="doc_title"
-                  class="ml-3"
-                >
-                  跟随文件标题
-              </label>
-              <template v-if="editMode === 'fixed'">
-                <input
-                  v-model="editReplace"
-                  type="text"
-                  class="mt-2 w-full rounded border border-line-soft bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
-                  placeholder="输入固定文本，留空则恢复原样"
-                >
-              </template>
-              <p
-                v-else
-                class="mt-2 text-xs text-ink-muted"
-              >
-                渲染时此处替换为当前文件标题
-              </p>
-              <div class="mt-2 flex justify-end gap-2">
-                <button
-                  class="rounded border border-line-soft px-2.5 py-1 text-xs text-ink hover:bg-surface-muted"
-                  @click="cancelEdit"
-                >
-                  取消
-                </button>
-                <button
-                  class="rounded bg-accent px-2.5 py-1 text-xs text-white hover:bg-accent/90"
-                  @click="confirmEdit"
-                >
-                  确定
-                </button>
-              </div>
-            </div>
-            <span
-              v-if="saveError"
-              class="mt-2 block text-[10px] text-warn"
-            >{{ saveError }}</span>
           </section>
 
           <!-- ── ② 标题层级预览 ── -->
@@ -416,6 +359,62 @@ function resetDraft(): void {
         <div v-else class="p-6 text-center text-sm text-ink-muted">
           <p>该模板暂无可预览的结构数据。</p>
           <p class="mt-1 text-xs">若模板是在旧版本中上传的，请删除后重新上传。</p>
+        </div>
+      </div>
+
+      <!-- Edit modal dialog -->
+      <div
+        v-if="editingFragment"
+        class="absolute inset-0 z-30 flex items-center justify-center bg-black/10"
+        @click.self="cancelEdit"
+      >
+        <div class="w-80 rounded-lg border border-accent/40 bg-surface p-4 shadow-xl">
+          <p class="mb-3 text-sm font-medium text-ink">
+            编辑「{{ editingFragment.original.slice(0, 30) }}」
+          </p>
+          <label class="flex items-center gap-2 text-xs text-ink">
+            <input
+              v-model="editMode"
+              type="radio"
+              value="fixed"
+            >
+            本项目固定
+            <input
+              v-model="editMode"
+              type="radio"
+              value="doc_title"
+              class="ml-3"
+            >
+            跟随文件标题
+          </label>
+          <template v-if="editMode === 'fixed'">
+            <input
+              v-model="editReplace"
+              type="text"
+              class="mt-2 w-full rounded border border-line-soft bg-surface px-2 py-1.5 text-sm text-ink outline-none focus:border-accent"
+              placeholder="输入固定文本，留空则恢复原样"
+            >
+          </template>
+          <p
+            v-else
+            class="mt-2 text-xs text-ink-muted"
+          >
+            渲染时此处替换为当前文件标题
+          </p>
+          <div class="mt-3 flex justify-end gap-2">
+            <button
+              class="rounded border border-line-soft px-3 py-1.5 text-sm text-ink hover:bg-surface-muted"
+              @click="cancelEdit"
+            >
+              取消
+            </button>
+            <button
+              class="rounded bg-accent px-3 py-1.5 text-sm text-white hover:bg-accent/90"
+              @click="confirmEdit"
+            >
+              确定
+            </button>
+          </div>
         </div>
       </div>
     </div>
