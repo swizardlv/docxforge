@@ -6,8 +6,10 @@ import type {
   JobInfo,
   RenderRequest,
   RenderResponse,
+  StyleMap,
   TemplateInfo,
   TemplateListResponse,
+  TemplateStylesResponse,
 } from '@/types/api'
 
 const DEFAULT_BASE = '/api'
@@ -101,6 +103,23 @@ export function createHttpApi(base: string = DEFAULT_BASE): DocXForgeApi {
       await request<void>(`/templates/${encodeURIComponent(templateId)}`, {
         method: 'DELETE',
       })
+    },
+
+    async getTemplateStyles(templateId: string) {
+      return request<TemplateStylesResponse>(
+        `/templates/${encodeURIComponent(templateId)}/styles`,
+      )
+    },
+
+    async saveStyleMap(templateId: string, styleMap: StyleMap) {
+      await request<void>(
+        `/templates/${encodeURIComponent(templateId)}/style-map`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(styleMap),
+        },
+      )
     },
 
     async render(payload: RenderRequest) {

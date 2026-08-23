@@ -64,6 +64,60 @@ export interface TemplateListResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Style mapping
+// ---------------------------------------------------------------------------
+
+export type StyleRole =
+  | 'unused'
+  | 'heading1' | 'heading2' | 'heading3'
+  | 'heading4' | 'heading5' | 'heading6'
+  | 'paragraph' | 'list_ordered' | 'list_bullet'
+  | 'quote' | 'code' | 'caption' | 'table' | 'title'
+
+export const ROLE_LABELS: Record<StyleRole, string> = {
+  unused: '不映射',
+  heading1: '标题 1',
+  heading2: '标题 2',
+  heading3: '标题 3',
+  heading4: '标题 4',
+  heading5: '标题 5',
+  heading6: '标题 6',
+  paragraph: '正文',
+  list_ordered: '有序列表',
+  list_bullet: '无序列表',
+  quote: '引用',
+  code: '代码',
+  caption: '题注',
+  table: '表格',
+  title: '标题页',
+}
+
+export const ROLE_ORDER: StyleRole[] = [
+  'heading1', 'heading2', 'heading3', 'heading4', 'heading5', 'heading6',
+  'paragraph', 'list_ordered', 'list_bullet', 'quote', 'code',
+  'caption', 'table', 'title', 'unused',
+]
+
+export interface StyleEntry {
+  style_id: string
+  name: string | null
+  type: string | null
+  font: string | null
+  size_pt: number | null
+  color: string | null
+  bold: boolean | null
+  italic: boolean | null
+  line_spacing: string | null
+  alignment: string | null
+  role: StyleRole
+}
+
+export interface TemplateStylesResponse {
+  styles: StyleEntry[]
+  style_map: StyleMap
+}
+
+// ---------------------------------------------------------------------------
 // Render request / response
 // ---------------------------------------------------------------------------
 

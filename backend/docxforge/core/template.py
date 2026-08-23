@@ -12,7 +12,25 @@ from docxforge.config import Settings, get_settings
 from docxforge.core.officecli import DefaultOfficeCLIRunner
 from docxforge.errors import TemplateError, TemplateNotFoundError
 from docxforge.interfaces import OfficeCLIRunner
-from docxforge.models import PreparedBase, StyleMap, TemplateInfo
+from docxforge.models import PreparedBase, StyleInfo, StyleMap, TemplateInfo
+
+#: Word style ids officecli accepts as built-in aliases even when the template's
+#: styles part does not define them (see CONTRACTS.md section 4). The style-map
+#: validation lets these through so a mapping can mix template styles with the
+#: built-in fallbacks.
+BUILTIN_STYLE_ALIASES = frozenset(
+    {
+        *(f"Heading{level}" for level in range(1, 7)),
+        "Normal",
+        "ListNumber",
+        "ListBullet",
+        "Quote",
+        "HTMLPreformatted",
+        "Caption",
+        "TableGrid",
+        "Title",
+    }
+)
 
 
 class DefaultTemplateEngine:
@@ -55,10 +73,19 @@ class DefaultTemplateEngine:
         warnings: list[str] = []
         if cover_paragraph_count > 0:
             warnings.append(f"已按正文前 {cover_paragraph_count} 个段落识别为封皮")
+
+        # Parse the /styles dump into structured StyleInfo list and infer the
+        # node-kind → style-id mapping (StyleMap). Both are persisted in the
+        # template config and used by the style-mapping UI.
+        style_infos = self._parse_styles(styles)
+        style_map = self._infer_style_map(style_infos)
+
         info = TemplateInfo(
             template_id=tid,
             name=title,
             source_path=source,
+            styles=style_infos,
+            style_map=style_map,
             has_cover=cover_paragraph_count > 0,
             has_numbering=bool(numbering),
             cover_paragraph_count=cover_paragraph_count,
@@ -91,6 +118,162 @@ class DefaultTemplateEngine:
             else:
                 break
         return count
+
+    @staticmethod
+    def _parse_styles(styles_dump: list[dict]) -> list[StyleInfo]:
+        """Parse the /styles officecli dump replay-commands into StyleInfo objects.
+
+        The dump is a list of ``add`` commands. Style definitions are ``add type=style``
+        entries; their font/size/color/bold/italic/alignment attributes live in child
+        commands (``w:rPr`` → ``w:rFonts`` / ``w:sz`` / ``w:color`` / ``w:b`` / ``w:i``,
+        and ``w:pPr`` → ``w:spacing`` / ``w:jc``). The parser walks the flat list
+        sequentially, treating commands between one ``type=style`` and the next (or
+        end) as children of that style.
+        """
+        result: list[StyleInfo] = []
+        current: dict[str, object] = {}
+
+        for item in styles_dump:
+            if not isinstance(item, dict):
+                continue
+            command = item.get("command")
+            typ = item.get("type")
+            props = item.get("props") or {}
+
+            if command == "add" and typ == "style":
+                if current:
+                    result.append(StyleInfo(**current))
+                current = {
+                    "style_id": props.get("id") or "",
+                    "name": props.get("name"),
+                    "type": props.get("type"),
+                    "based_on": props.get("basedOn"),
+                }
+
+            elif current:
+                # Collect format properties from child commands.
+                if typ == "w:rFonts":
+                    # First available font (ascii > hAnsi > eastAsia)
+                    font = (
+                        props.get("w:ascii")
+                        or props.get("w:hAnsi")
+                        or props.get("w:eastAsia")
+                    )
+                    if font:
+                        current.setdefault("font", font)
+                elif typ == "w:sz":
+                    try:
+                        hval = int(props.get("w:val", "0"))
+                        if hval:
+                            current["size_pt"] = hval / 2.0
+                    except (ValueError, TypeError):
+                        pass
+                elif typ == "w:color":
+                    val = props.get("w:val")
+                    if val:
+                        current["color"] = val
+                elif typ == "w:b":
+                    current["bold"] = props.get("w:val", "1") != "0"
+                elif typ == "w:i":
+                    current["italic"] = props.get("w:val", "1") != "0"
+                elif typ == "w:spacing":
+                    line = props.get("w:line")
+                    if line:
+                        current["line_spacing"] = line
+                elif typ == "w:jc":
+                    val = props.get("w:val")
+                    if val:
+                        current["alignment"] = val
+
+        if current:
+            result.append(StyleInfo(**current))
+
+        return result
+
+    @staticmethod
+    def _infer_style_map(styles: list[StyleInfo]) -> StyleMap:
+        """Infer a StyleMap from the parsed style list by matching style names/IDs
+        against conventional rendering roles.
+
+        Headings (1-6) are matched first by numeric suffix in the style id or name
+        (e.g. ``1``, ``heading 1``, ``Heading1``, ``标题 1``). Other roles are matched
+        by keyword. Only the first match wins per role; unmatched styles are left
+        unused but remain visible in the UI for manual assignment.
+        """
+        sm = StyleMap()
+        # Build a lookup: style_id → StyleInfo
+        by_id = {s.style_id: s for s in styles}
+
+        # --- Headings 1-6 ---
+        heading_map: dict[int, str] = {}
+        for level in range(1, 7):
+            candidates = []
+            for sid, info in by_id.items():
+                if info.style_id in heading_map.values():
+                    continue  # already assigned
+                lower_id = sid.lower()
+                lower_name = (info.name or "").lower()
+                # Match: id="1" / id="2" (numeric), or name contains "heading 1"/"标题 1"
+                if sid == str(level):
+                    candidates.append(sid)
+                elif f"heading {level}" in lower_name:
+                    candidates.append(sid)
+                elif f"heading{level}" in lower_id:
+                    candidates.append(sid)
+                elif f"标题 {level}" in lower_name:
+                    candidates.append(sid)
+                elif level == 1 and "title" in lower_name and "标题" in lower_name:
+                    candidates.append(sid)
+            if candidates:
+                # Prefer exact match by numeric id, then first candidate
+                best = next((c for c in candidates if c == str(level)), candidates[0])
+                heading_map[level] = best
+
+        sm.headings = heading_map
+
+        # --- Other roles (keyword match) ---
+        role_patterns: list[tuple[str, str]] = [
+            ("paragraph", "normal"),
+            ("paragraph", "body text"),
+            ("paragraph", "正文"),
+            ("list_ordered", "list paragraph"),
+            ("list_ordered", "列表"),
+            ("list_bullet", "list bullet"),
+            ("quote", "quote"),
+            ("quote", "引用"),
+            ("code", "html"),
+            ("code", "代码"),
+            ("caption", "caption"),
+            ("caption", "题注"),
+            ("table", "table grid"),
+            ("table", "表格"),
+            ("title", "title"),
+            ("title", "封面"),
+        ]
+
+        assigned = set(sm.headings.values())
+        _ROLE_ATTRS = ("paragraph", "list_ordered", "list_bullet", "quote",
+                       "code", "caption", "table", "title")
+        assigned_roles = {
+            attr for attr in _ROLE_ATTRS
+            if getattr(sm, attr) != getattr(StyleMap(), attr)
+        }
+        for attr, keyword in role_patterns:
+            if attr in assigned_roles:
+                # This role already has a concrete template style; the extra
+                # keyword entry for the same role must not overwrite it.
+                continue
+            for sid, info in by_id.items():
+                if sid in assigned:
+                    continue
+                lower_name = (info.name or "").lower()
+                if keyword in lower_name:
+                    setattr(sm, attr, sid)
+                    assigned.add(sid)
+                    assigned_roles.add(attr)
+                    break
+
+        return sm
 
     def list_templates(self) -> list[TemplateInfo]:
         if not self.settings.templates_dir.exists():
@@ -205,30 +388,109 @@ class DefaultTemplateEngine:
         )
 
     def style_map_for(self, template_id: str | None) -> StyleMap:
-        """Resolve the node-kind -> Word style mapping from the template's styles.
+        """Resolve the node-kind -> Word style mapping for a template.
 
-        The stored styles dump is a list of replay commands; every ``add style``
-        entry carries the OOXML style id in ``props.id``. Standard ids (Heading1,
-        Normal, ...) are kept verbatim; anything the template lacks falls back
-        to the built-in default, which officecli accepts as an alias anyway.
+        Returns the persisted ``style_map`` from the template config (falling
+        back to the default mapping for templates registered before style
+        mapping existed, or when there is no template at all).
         """
-        style_map = StyleMap()
         if not template_id:
-            return style_map
+            return StyleMap()
+        config = self._read_config(template_id)
+        if config is None:
+            return StyleMap()
+        info = config.get("info") or {}
+        style_map_data = info.get("style_map")
+        if isinstance(style_map_data, dict):
+            try:
+                return StyleMap.model_validate(style_map_data)
+            except Exception:
+                pass
+        return StyleMap()
+
+    def styles_for(self, template_id: str) -> dict:
+        """Annotated style list + current mapping for the style-mapping UI.
+
+        Returns a dict shaped like :class:`docxforge.models.TemplateStylesResponse`.
+        """
+        engine_info = self.get_template(template_id)
+        style_map = engine_info.style_map
+        # role <- style_id lookup built from the persisted map
+        role_by_id: dict[str, str] = {}
+        for level, sid in style_map.headings.items():
+            if sid:
+                role_by_id[sid] = f"heading{level}"
+        role_attrs = {
+            "paragraph": "paragraph",
+            "list_ordered": "list_ordered",
+            "list_bullet": "list_bullet",
+            "quote": "quote",
+            "code": "code",
+            "caption": "caption",
+            "table": "table",
+            "title": "title",
+        }
+        for attr, role in role_attrs.items():
+            sid = getattr(style_map, attr, None)
+            if sid:
+                role_by_id.setdefault(sid, role)
+
+        entries = []
+        for s in engine_info.styles:
+            entries.append(
+                {
+                    "style_id": s.style_id,
+                    "name": s.name,
+                    "type": s.type,
+                    "font": s.font,
+                    "size_pt": s.size_pt,
+                    "color": s.color,
+                    "bold": s.bold,
+                    "italic": s.italic,
+                    "line_spacing": s.line_spacing,
+                    "alignment": s.alignment,
+                    "role": role_by_id.get(s.style_id, "unused"),
+                }
+            )
+        return {
+            "styles": entries,
+            "style_map": style_map.model_dump(mode="json"),
+        }
+
+    def save_style_map(self, template_id: str, style_map: StyleMap) -> None:
+        """Persist an updated style_map, validating every referenced style id."""
+        valid_ids = {s.style_id for s in self.get_template(template_id).styles}
+        referenced = set(style_map.headings.values())
+        for attr in (
+            "paragraph",
+            "list_ordered",
+            "list_bullet",
+            "quote",
+            "code",
+            "caption",
+            "table",
+            "title",
+        ):
+            sid = getattr(style_map, attr)
+            if sid:
+                referenced.add(sid)
+        # Built-in aliases (Heading1, Normal, ...) are always usable as a
+        # fallback even when the template does not define them.
+        missing = sorted((referenced - valid_ids) - BUILTIN_STYLE_ALIASES)
+        if missing:
+            raise TemplateError(
+                "样式映射引用了不存在的样式",
+                detail=", ".join(missing),
+            )
 
         config = self._read_config(template_id)
         if config is None:
-            return style_map
-        ids = self._extract_style_ids(config.get("styles") or [])
-        if not ids:
-            return style_map
-
-        # Headings 1-6: keep the conventional id only when the template defines it.
-        headings: dict[int, str] = {}
-        for level, default_id in style_map.headings.items():
-            headings[level] = default_id if default_id in ids else default_id
-        style_map.headings = headings
-        return style_map
+            raise TemplateNotFoundError(f"Template '{template_id}' not found")
+        config.setdefault("info", {})["style_map"] = style_map.model_dump(mode="json")
+        config_path = self._template_dir(template_id) / "template_config.json"
+        config_path.write_text(
+            json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
     def _read_config(self, template_id: str) -> dict | None:
         config_file = self._template_dir(template_id) / "template_config.json"

@@ -44,6 +44,7 @@ from docxforge.models import (
     JobState,
     RenderRequest,
     RenderResponse,
+    StyleMap,
     TemplateInfo,
     TemplateListResponse,
 )
@@ -167,6 +168,26 @@ async def upload_template(
 @router.delete("/templates/{template_id}", status_code=204)
 async def delete_template(template_id: str, engine: TemplateEngineDep) -> Response:
     await run_in_threadpool(engine.delete_template, template_id)
+    return Response(status_code=204)
+
+
+@router.get("/templates/{template_id}/styles")
+async def get_template_styles(
+    template_id: str,
+    engine: TemplateEngineDep,
+) -> dict:
+    """Return the template's style list with inferred or user-assigned roles."""
+    return await run_in_threadpool(engine.styles_for, template_id)
+
+
+@router.put("/templates/{template_id}/style-map", status_code=204)
+async def put_template_style_map(
+    template_id: str,
+    style_map: StyleMap,
+    engine: TemplateEngineDep,
+) -> Response:
+    """Persist an updated style role mapping for the template."""
+    await run_in_threadpool(engine.save_style_map, template_id, style_map)
     return Response(status_code=204)
 
 

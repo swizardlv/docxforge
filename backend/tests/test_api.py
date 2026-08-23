@@ -96,11 +96,44 @@ class FakeTemplateEngine:
         return list(self.templates.values())
 
     def get_template(self, template_id: str) -> TemplateInfo:
+        if template_id not in self.templates:
+            from docxforge.errors import TemplateNotFoundError
+
+            raise TemplateNotFoundError(f"Template '{template_id}' not found")
         return self.templates[template_id]
 
     def delete_template(self, template_id: str) -> None:
         self.deleted.append(template_id)
         self.templates.pop(template_id, None)
+
+    def styles_for(self, template_id: str) -> dict:
+        info = self.get_template(template_id)
+        return {
+            "styles": [
+                {
+                    "style_id": s.style_id,
+                    "name": s.name,
+                    "type": s.type,
+                    "font": s.font,
+                    "size_pt": s.size_pt,
+                    "color": s.color,
+                    "bold": s.bold,
+                    "italic": s.italic,
+                    "line_spacing": s.line_spacing,
+                    "alignment": s.alignment,
+                    "role": "unused",
+                }
+                for s in info.styles
+            ],
+            "style_map": info.style_map.model_dump(mode="json"),
+        }
+
+    def save_style_map(self, template_id: str, style_map: object) -> None:
+        info = self.get_template(template_id)
+        from docxforge.models import StyleMap as StyleMapModel
+
+        validated = StyleMapModel.model_validate(style_map)
+        info.style_map = validated
 
 
 class FakeRunner:
@@ -302,6 +335,73 @@ def test_delete_template(client: TestClient, engine: FakeTemplateEngine) -> None
 
     assert response.status_code == 204
     assert engine.deleted == [template_id]
+
+
+def test_get_template_styles(client: TestClient, engine: FakeTemplateEngine) -> None:
+    from docxforge.models import StyleInfo
+
+    template_id = client.post(
+        "/api/templates",
+        files={"file": ("t.docx", DOCX_BYTES, DOCX_MEDIA_TYPE)},
+    ).json()["template_id"]
+    info = engine.templates[template_id]
+    info.styles = [
+        StyleInfo(style_id="1", name="heading 1", type="paragraph", size_pt=16.0),
+        StyleInfo(style_id="a", name="Normal", type="paragraph", size_pt=12.0),
+    ]
+
+    response = client.get(f"/api/templates/{template_id}/styles")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["styles"]) == 2
+    assert payload["styles"][0]["style_id"] == "1"
+    assert payload["styles"][0]["name"] == "heading 1"
+    assert payload["styles"][0]["size_pt"] == 16.0
+    assert "style_map" in payload
+
+
+def test_put_style_map(client: TestClient, engine: FakeTemplateEngine) -> None:
+    template_id = client.post(
+        "/api/templates",
+        files={"file": ("t.docx", DOCX_BYTES, DOCX_MEDIA_TYPE)},
+    ).json()["template_id"]
+
+    payload = {
+        "headings": {"1": "1", "2": "Heading2", "3": "Heading3",
+                     "4": "Heading4", "5": "Heading5", "6": "Heading6"},
+        "paragraph": "a",
+        "list_ordered": "ListNumber",
+        "list_bullet": "ListBullet",
+        "quote": "Quote",
+        "code": "HTMLPreformatted",
+        "caption": "Caption",
+        "table": "TableGrid",
+        "title": "Title",
+    }
+    response = client.put(
+        f"/api/templates/{template_id}/style-map",
+        json=payload,
+    )
+    assert response.status_code == 204
+    assert engine.templates[template_id].style_map.heading(1) == "1"
+
+
+def test_put_style_map_unknown_template(client: TestClient) -> None:
+    payload = {
+        "headings": {"1": "1", "2": "2", "3": "3",
+                     "4": "4", "5": "5", "6": "6"},
+        "paragraph": "a",
+        "list_ordered": "b",
+        "list_bullet": "c",
+        "quote": "d",
+        "code": "e",
+        "caption": "f",
+        "table": "g",
+        "title": "h",
+    }
+    response = client.put("/api/templates/nope/style-map", json=payload)
+    assert response.status_code == 404
 
 
 # ---------------------------------------------------------------------------

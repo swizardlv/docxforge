@@ -5,7 +5,9 @@ import type {
   JobInfo,
   RenderRequest,
   RenderResponse,
+  StyleMap,
   TemplateInfo,
+  TemplateStylesResponse,
 } from '@/types/api'
 
 export type ApiMode = 'live' | 'mock'
@@ -43,6 +45,8 @@ export interface DocXForgeApi {
   listTemplates(): Promise<TemplateInfo[]>
   uploadTemplate(file: File, name?: string): Promise<TemplateInfo>
   deleteTemplate(templateId: string): Promise<void>
+  getTemplateStyles(templateId: string): Promise<TemplateStylesResponse>
+  saveStyleMap(templateId: string, styleMap: StyleMap): Promise<void>
   render(request: RenderRequest): Promise<RenderResponse>
   getJob(jobId: string): Promise<JobInfo>
   /** Fetches the generated docx as a blob so failures surface as `ApiError`. */

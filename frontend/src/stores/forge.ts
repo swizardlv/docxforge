@@ -10,7 +10,9 @@ import {
   type JobInfo,
   type RenderRequest,
   type RenderResponse,
+  type StyleMap,
   type TemplateInfo,
+  type TemplateStylesResponse,
   type DestroyReport,
 } from '@/types/api'
 import { parseOutline } from '@/utils/outline'
@@ -21,6 +23,13 @@ export interface CoverField {
   id: number
   find: string
   replace: string
+}
+
+/** A Markdown file imported from a folder (project workbench). */
+export interface MarkdownFileInfo {
+  name: string
+  path: string
+  content: string
 }
 
 const COUNTDOWN_TICK_MS = 250
@@ -53,6 +62,17 @@ export const useForgeStore = defineStore('forge', () => {
   const templatesLoading = ref(false)
   const templateError = ref<ApiError | null>(null)
   const uploading = ref(false)
+
+  // --- project workbench (session-scoped multi-file editing) ---------------
+  const projectFiles = ref<MarkdownFileInfo[]>([])
+  const selectedFileKey = ref<string | null>(null)
+
+  // --- style mapping panel -------------------------------------------------
+  const stylePanelOpen = ref(false)
+  const templateStyles = ref<TemplateStylesResponse | null>(null)
+  const stylesLoading = ref(false)
+  const stylesSaving = ref(false)
+  const stylesError = ref<ApiError | null>(null)
 
   // --- document form --------------------------------------------------------
   const markdown = ref(SAMPLE_MARKDOWN)
@@ -167,6 +187,127 @@ export const useForgeStore = defineStore('forge', () => {
     } catch (error) {
       templateError.value = toApiError(error, '模板删除失败。')
     }
+  }
+
+  // --- project files --------------------------------------------------------
+  function fileToDataUri(file: File): Promise<string> {
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onload = (e) => resolve((e.target?.result as string) ?? '')
+      reader.readAsDataURL(file)
+    })
+  }
+
+  async function importFolderFiles(files: File[]): Promise<void> {
+    const mdFileList: File[] = []
+    const imageFiles: File[] = []
+
+    for (const file of files) {
+      const lowerName = file.name.toLowerCase()
+      if (lowerName.endsWith('.md') || lowerName.endsWith('.markdown')) {
+        mdFileList.push(file)
+      } else if (/\.(png|jpe?g|gif|webp|svg)$/i.test(file.name)) {
+        imageFiles.push(file)
+      }
+    }
+
+    if (mdFileList.length === 0) return
+
+    // Natural sort
+    mdFileList.sort((a, b) => {
+      const pathA = a.webkitRelativePath || a.name
+      const pathB = b.webkitRelativePath || b.name
+      return pathA.localeCompare(pathB, undefined, { numeric: true, sensitivity: 'base' })
+    })
+
+    // Read images as Base64 data URIs
+    const imageMap = new Map<string, string>()
+    for (const imgFile of imageFiles) {
+      const dataUri = await fileToDataUri(imgFile)
+      const relPath = imgFile.webkitRelativePath
+        ? imgFile.webkitRelativePath.split('/').slice(1).join('/')
+        : imgFile.name
+      imageMap.set(relPath.toLowerCase(), dataUri)
+      imageMap.set(imgFile.name.toLowerCase(), dataUri)
+    }
+
+    const replaceImages = (rawText: string) =>
+      rawText.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, src: string) => {
+        if (src.startsWith('data:') || src.startsWith('http://') || src.startsWith('https://')) {
+          return match
+        }
+        const cleanSrc = src.trim().replace(/^\.\//, '').toLowerCase()
+        const foundDataUri = imageMap.get(cleanSrc) || imageMap.get(cleanSrc.split('/').pop() ?? '')
+        return foundDataUri ? `![${alt}](${foundDataUri})` : match
+      })
+
+    const parsedFiles: MarkdownFileInfo[] = []
+    for (const file of mdFileList) {
+      const text = await file.text()
+      const path = file.webkitRelativePath || file.name
+      parsedFiles.push({ name: file.name, path, content: replaceImages(text) })
+    }
+
+    projectFiles.value = parsedFiles
+    selectedFileKey.value = '__ALL__'
+    applyProjectFileSelection()
+  }
+
+  function selectProjectFile(key: string | null): void {
+    selectedFileKey.value = key
+    applyProjectFileSelection()
+  }
+
+  function applyProjectFileSelection(): void {
+    if (projectFiles.value.length === 0) return
+    if (selectedFileKey.value === '__ALL__') {
+      markdown.value = projectFiles.value.map((f) => f.content).join('\n\n')
+    } else {
+      const target = projectFiles.value.find((f) => f.path === selectedFileKey.value)
+      if (target) markdown.value = target.content
+    }
+  }
+
+  // --- style mapping --------------------------------------------------------
+  async function loadTemplateStyles(templateId: string): Promise<void> {
+    stylesLoading.value = true
+    stylesError.value = null
+    try {
+      templateStyles.value = await requireApi().getTemplateStyles(templateId)
+    } catch (error) {
+      stylesError.value = toApiError(error, '样式加载失败。')
+      templateStyles.value = null
+    } finally {
+      stylesLoading.value = false
+    }
+  }
+
+  async function saveStyleMap(templateId: string, styleMap: StyleMap): Promise<boolean> {
+    stylesSaving.value = true
+    stylesError.value = null
+    try {
+      await requireApi().saveStyleMap(templateId, styleMap)
+      if (templateStyles.value) {
+        templateStyles.value = { ...templateStyles.value, style_map: styleMap }
+      }
+      return true
+    } catch (error) {
+      stylesError.value = toApiError(error, '样式映射保存失败。')
+      return false
+    } finally {
+      stylesSaving.value = false
+    }
+  }
+
+  function openStylePanel(): void {
+    stylePanelOpen.value = true
+    if (templateId.value && templateId.value !== selectedTemplate.value?.template_id) {
+      void loadTemplateStyles(templateId.value)
+    }
+  }
+
+  function closeStylePanel(): void {
+    stylePanelOpen.value = false
   }
 
   // --- cover fields ---------------------------------------------------------
@@ -385,6 +526,21 @@ export const useForgeStore = defineStore('forge', () => {
     loadTemplates,
     uploadTemplate,
     removeTemplate,
+    // project files
+    projectFiles,
+    selectedFileKey,
+    importFolderFiles,
+    selectProjectFile,
+    // style mapping
+    stylePanelOpen,
+    templateStyles,
+    stylesLoading,
+    stylesSaving,
+    stylesError,
+    loadTemplateStyles,
+    saveStyleMap,
+    openStylePanel,
+    closeStylePanel,
     // form
     markdown,
     docTitle,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, useId } from 'vue'
+import { computed, nextTick, ref, useId } from 'vue'
 
 const model = defineModel<string>({ required: true })
 
@@ -9,15 +9,7 @@ const editorId = useId()
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const gutterRef = ref<HTMLDivElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
-const folderInputRef = ref<HTMLInputElement | null>(null)
 const isDragging = ref(false)
-
-onMounted(() => {
-  if (folderInputRef.value) {
-    folderInputRef.value.setAttribute('webkitdirectory', '')
-    folderInputRef.value.setAttribute('directory', '')
-  }
-})
 
 const lines = computed(() => model.value.split('\n').length)
 const characters = computed(() => model.value.length)
@@ -47,10 +39,6 @@ function triggerFileImport(): void {
   fileInputRef.value?.click()
 }
 
-function triggerFolderImport(): void {
-  folderInputRef.value?.click()
-}
-
 function handleFileImport(event: Event): void {
   const target = event.target as HTMLInputElement
   const file = target.files?.[0]
@@ -65,106 +53,6 @@ function handleFileImport(event: Event): void {
   }
   reader.readAsText(file, 'utf-8')
   target.value = ''
-}
-
-/** Process uploaded folder containing markdown & local image files */
-async function handleFolderImport(event: Event): Promise<void> {
-  const target = event.target as HTMLInputElement
-  const files = Array.from(target.files ?? [])
-  if (files.length === 0) return
-
-  await processFileList(files)
-  target.value = ''
-}
-
-interface MarkdownFileInfo {
-  name: string
-  path: string
-  content: string
-}
-
-const mdFiles = ref<MarkdownFileInfo[]>([])
-const selectedMdKey = ref<string>('__ALL__')
-
-async function processFileList(files: File[]): Promise<void> {
-  const mdFileList: File[] = []
-  const imageFiles: File[] = []
-
-  for (const file of files) {
-    const lowerName = file.name.toLowerCase()
-    if (lowerName.endsWith('.md') || lowerName.endsWith('.markdown')) {
-      mdFileList.push(file)
-    } else if (/\.(png|jpe?g|gif|webp|svg)$/i.test(file.name)) {
-      imageFiles.push(file)
-    }
-  }
-
-  if (mdFileList.length === 0) {
-    return
-  }
-
-  // 1. Natural sort for Markdown files
-  mdFileList.sort((a, b) => {
-    const pathA = a.webkitRelativePath || a.name
-    const pathB = b.webkitRelativePath || b.name
-    return pathA.localeCompare(pathB, undefined, { numeric: true, sensitivity: 'base' })
-  })
-
-  // 2. Read images as Base64 Data URIs
-  const imageMap = new Map<string, string>()
-  for (const imgFile of imageFiles) {
-    const dataUri = await fileToDataUri(imgFile)
-    const relPath = imgFile.webkitRelativePath
-      ? imgFile.webkitRelativePath.split('/').slice(1).join('/')
-      : imgFile.name
-    imageMap.set(relPath.toLowerCase(), dataUri)
-    imageMap.set(imgFile.name.toLowerCase(), dataUri)
-  }
-
-  // Helper to replace images in a Markdown text
-  const replaceImages = (rawText: string) => {
-    return rawText.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, src: string) => {
-      if (src.startsWith('data:') || src.startsWith('http://') || src.startsWith('https://')) {
-        return match
-      }
-      const cleanSrc = src.trim().replace(/^\.\//, '').toLowerCase()
-      const foundDataUri = imageMap.get(cleanSrc) || imageMap.get(cleanSrc.split('/').pop() ?? '')
-      if (foundDataUri) {
-        return `![${alt}](${foundDataUri})`
-      }
-      return match
-    })
-  }
-
-  // 3. Store parsed markdown file list
-  const parsedFiles: MarkdownFileInfo[] = []
-  for (const file of mdFileList) {
-    const text = await file.text()
-    const path = file.webkitRelativePath || file.name
-    parsedFiles.push({
-      name: file.name,
-      path,
-      content: replaceImages(text),
-    })
-  }
-
-  mdFiles.value = parsedFiles
-  selectedMdKey.value = '__ALL__'
-
-  applyMdSelection()
-}
-
-function applyMdSelection(): void {
-  if (mdFiles.value.length === 0) return
-
-  if (selectedMdKey.value === '__ALL__') {
-    model.value = mdFiles.value.map((f) => f.content).join('\n\n')
-  } else {
-    const target = mdFiles.value.find((f) => f.path === selectedMdKey.value)
-    if (target) {
-      model.value = target.content
-    }
-  }
 }
 
 /** Handle Cmd+V / Ctrl+V image paste */
@@ -213,16 +101,18 @@ async function handleDrop(event: DragEvent): Promise<void> {
   isDragging.value = false
   const files = Array.from(event.dataTransfer?.files ?? [])
   if (files.length > 0) {
-    await processFileList(files)
+    // Single markdown file: read directly. Multi-file folder: delegate to store.
+    const mdFiles = files.filter((f) => f.name.toLowerCase().endsWith('.md'))
+    const nonMd = files.filter((f) => !f.name.toLowerCase().endsWith('.md'))
+    if (nonMd.length > 0 || mdFiles.length > 1) {
+      // Folder with images or multiple files → use the project workbench
+      const { useForgeStore } = await import('@/stores/forge')
+      await useForgeStore().importFolderFiles(files)
+    } else if (mdFiles.length === 1 && mdFiles[0]) {
+      const text = await mdFiles[0].text()
+      model.value = text
+    }
   }
-}
-
-function fileToDataUri(file: File): Promise<string> {
-  return new Promise((resolve) => {
-    const reader = new FileReader()
-    reader.onload = (e) => resolve((e.target?.result as string) ?? '')
-    reader.readAsDataURL(file)
-  })
 }
 
 function scrollToLine(targetLine: number): void {
@@ -254,45 +144,13 @@ defineExpose({
         class="df-label !pb-0"
       >Markdown 正文</label>
       <div class="flex items-center gap-2">
-        <!-- Multi-markdown selector -->
-        <div
-          v-if="mdFiles.length > 1"
-          class="flex items-center gap-1.5 rounded bg-surface-muted px-2 py-0.5 border border-line text-xs"
-        >
-          <span class="text-ink-muted">📚 已检测到 {{ mdFiles.length }} 个 Markdown 文件:</span>
-          <select
-            v-model="selectedMdKey"
-            class="bg-transparent font-medium text-accent outline-none cursor-pointer"
-            @change="applyMdSelection"
-          >
-            <option value="__ALL__">
-              ✨ 自动按顺序合并所有文件 (共 {{ mdFiles.length }} 个)
-            </option>
-            <option
-              v-for="file in mdFiles"
-              :key="file.path"
-              :value="file.path"
-            >
-              📄 {{ file.path }}
-            </option>
-          </select>
-        </div>
-
         <button
           type="button"
           :disabled="disabled"
           class="rounded bg-accent/10 px-2 py-1 text-xs font-medium text-accent hover:bg-accent/20 disabled:opacity-50"
-          @click="triggerFolderImport"
-        >
-          📂 导入项目文件夹 (推荐：含自动绑定图片)
-        </button>
-        <button
-          type="button"
-          :disabled="disabled"
-          class="text-xs text-ink-muted hover:text-ink disabled:opacity-50"
           @click="triggerFileImport"
         >
-          📄 单文件
+          📄 导入 Markdown 文件
         </button>
       </div>
 
@@ -303,16 +161,6 @@ defineExpose({
         accept=".md,.markdown,.txt"
         class="hidden"
         @change="handleFileImport"
-      >
-
-      <!-- Directory folder input -->
-      <input
-        ref="folderInputRef"
-        type="file"
-        webkitdirectory
-        multiple
-        class="hidden"
-        @change="handleFolderImport"
       >
     </div>
     <div
@@ -365,7 +213,7 @@ defineExpose({
       :id="`${editorId}-hint`"
       class="df-hint flex items-center justify-between"
     >
-      <span>支持拖拽项目文件夹一键导入、自动嵌入本地图片、截图粘贴 (`Cmd+V`)。</span>
+      <span>支持拖拽 Markdown/文件夹到左侧面板、自动嵌入本地图片、截图粘贴 (`Cmd+V`)。</span>
       <span class="font-mono tabular-nums">{{ lines }} 行 · {{ characters }} 字符</span>
     </p>
   </div>

@@ -4,8 +4,11 @@ import type {
   JobInfo,
   RenderRequest,
   RenderResponse,
+  StyleEntry,
   StyleMap,
+  StyleRole,
   TemplateInfo,
+  TemplateStylesResponse,
 } from '@/types/api'
 
 /**
@@ -84,6 +87,36 @@ function seedTemplates(): TemplateInfo[] {
       warnings: ['该模板没有封皮节，封皮字段将被忽略'],
     },
   ]
+}
+
+// ---------------------------------------------------------------------------
+// Style mapping mock data
+// ---------------------------------------------------------------------------
+
+const STYLES_DB: (StyleEntry & { style_id: string })[] = [
+  { style_id: '1', name: 'heading 1', type: 'paragraph', font: 'Times New Roman', size_pt: 16, color: null, bold: true, italic: null, line_spacing: null, alignment: null, role: 'unused' as StyleRole },
+  { style_id: '2', name: 'heading 2', type: 'paragraph', font: 'Times New Roman', size_pt: 14, color: null, bold: true, italic: null, line_spacing: null, alignment: null, role: 'unused' as StyleRole },
+  { style_id: 'a', name: 'Normal', type: 'paragraph', font: '宋体', size_pt: 12, color: '000000', bold: null, italic: null, line_spacing: '259', alignment: 'both', role: 'unused' as StyleRole },
+  { style_id: 'af3', name: 'Table Grid', type: 'table', font: null, size_pt: null, color: null, bold: null, italic: null, line_spacing: null, alignment: null, role: 'unused' as StyleRole },
+  { style_id: 'af0', name: 'Title', type: 'paragraph', font: '黑体', size_pt: 22, color: '333333', bold: true, italic: null, line_spacing: null, alignment: 'center', role: 'unused' as StyleRole },
+  { style_id: 'af7', name: 'List Paragraph', type: 'paragraph', font: '宋体', size_pt: 12, color: null, bold: null, italic: null, line_spacing: '360', alignment: null, role: 'unused' as StyleRole },
+]
+
+const styleMapStore = new Map<string, StyleMap>()
+
+function inferRole(styleId: string, styleMap: StyleMap): StyleRole {
+  for (const [key, val] of Object.entries(styleMap.headings)) {
+    if (val === styleId) return `heading${key}` as StyleRole
+  }
+  if (styleMap.paragraph === styleId) return 'paragraph'
+  if (styleMap.list_ordered === styleId) return 'list_ordered'
+  if (styleMap.list_bullet === styleId) return 'list_bullet'
+  if (styleMap.quote === styleId) return 'quote'
+  if (styleMap.code === styleId) return 'code'
+  if (styleMap.caption === styleId) return 'caption'
+  if (styleMap.table === styleId) return 'table'
+  if (styleMap.title === styleId) return 'title'
+  return 'unused'
 }
 
 interface MockJob {
@@ -190,6 +223,35 @@ export function createMockApi(): DocXForgeApi {
         )
       }
       templates.splice(index, 1)
+    },
+
+    async getTemplateStyles(templateId: string) {
+      await delay(160)
+      const info = templates.find((item) => item.template_id === templateId)
+      if (!info) {
+        throw new ApiError(
+          { code: 'template_not_found', message: '模板不存在。', detail: templateId },
+          404,
+        )
+      }
+      const styleMap = styleMapStore.get(templateId) ?? info.style_map
+      const styles = STYLES_DB.map((s) => ({
+        ...s,
+        role: inferRole(s.style_id, styleMap),
+      }))
+      return { styles, style_map: styleMap } as TemplateStylesResponse
+    },
+
+    async saveStyleMap(templateId: string, styleMap: StyleMap) {
+      await delay(200)
+      const info = templates.find((item) => item.template_id === templateId)
+      if (!info) {
+        throw new ApiError(
+          { code: 'template_not_found', message: '模板不存在。', detail: templateId },
+          404,
+        )
+      }
+      styleMapStore.set(templateId, styleMap)
     },
 
     async render(request: RenderRequest) {

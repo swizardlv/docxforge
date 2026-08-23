@@ -212,6 +212,12 @@ class StyleInfo(BaseModel):
     based_on: str | None = None
     font: str | None = None
     size_pt: float | None = None
+    #: Extended format properties (extracted from w:rPr sub-commands).
+    color: str | None = None
+    bold: bool | None = None
+    italic: bool | None = None
+    line_spacing: str | None = None
+    alignment: str | None = None
 
 
 class TemplateInfo(BaseModel):
@@ -402,6 +408,49 @@ class TemplateListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     templates: list[TemplateInfo] = Field(default_factory=list)
+
+
+class StyleRole(str, Enum):
+    UNUSED = "unused"
+    HEADING1 = "heading1"
+    HEADING2 = "heading2"
+    HEADING3 = "heading3"
+    HEADING4 = "heading4"
+    HEADING5 = "heading5"
+    HEADING6 = "heading6"
+    PARAGRAPH = "paragraph"
+    LIST_ORDERED = "list_ordered"
+    LIST_BULLET = "list_bullet"
+    QUOTE = "quote"
+    CODE = "code"
+    CAPTION = "caption"
+    TABLE = "table"
+    TITLE = "title"
+
+
+class StyleEntry(BaseModel):
+    """One style in the style-list response, annotated with its inferred role."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    style_id: str
+    name: str | None = None
+    type: str | None = None
+    font: str | None = None
+    size_pt: float | None = None
+    color: str | None = None
+    bold: bool | None = None
+    italic: bool | None = None
+    line_spacing: str | None = None
+    alignment: str | None = None
+    role: StyleRole = StyleRole.UNUSED
+
+
+class TemplateStylesResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    styles: list[StyleEntry] = Field(default_factory=list)
+    style_map: StyleMap = Field(default_factory=StyleMap)
 
 
 class RenderResponse(BaseModel):
