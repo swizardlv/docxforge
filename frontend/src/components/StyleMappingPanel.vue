@@ -135,7 +135,7 @@ function handleClose(): void {
           v-else-if="!store.templateStyles?.styles?.length"
           tone="warn"
         >
-          该模板没有可识别的样式。
+          该模板没有可识别的样式。若模板是在旧版本中上传的，请删除后重新上传以提取样式。
         </InlineMessage>
 
         <div

@@ -51,7 +51,7 @@ onBeforeUnmount(() => {
 
     <main class="mx-auto flex w-full max-w-[1600px] flex-1 gap-4 px-4 py-4">
       <!-- Left sidebar: project files + template -->
-      <aside class="hidden w-56 shrink-0 flex-col gap-4 xl:flex">
+      <aside class="hidden w-80 shrink-0 flex-col gap-4 xl:flex">
         <SectionCard
           title="项目文件"
           icon="document"

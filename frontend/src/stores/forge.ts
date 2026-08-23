@@ -301,7 +301,9 @@ export const useForgeStore = defineStore('forge', () => {
 
   function openStylePanel(): void {
     stylePanelOpen.value = true
-    if (templateId.value && templateId.value !== selectedTemplate.value?.template_id) {
+    // Always (re)load: the style list is per-template and the user may have
+    // switched templates or freshly uploaded one since the panel last opened.
+    if (templateId.value) {
       void loadTemplateStyles(templateId.value)
     }
   }
