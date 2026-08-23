@@ -104,6 +104,11 @@ const STYLES_DB: (StyleEntry & { style_id: string })[] = [
 
 const styleMapStore = new Map<string, StyleMap>()
 
+const coverOverrideStore = new Map<
+  string,
+  Array<{ find: string; replace: string | null; mode: string }>
+>()
+
 function inferRole(styleId: string, styleMap: StyleMap): StyleRole {
   for (const [key, val] of Object.entries(styleMap.headings)) {
     if (val === styleId) return `heading${key}` as StyleRole
@@ -263,9 +268,11 @@ export function createMockApi(): DocXForgeApi {
           404,
         )
       }
+      const overrides = coverOverrideStore.get(templateId) ?? []
       return {
         cover: [
           { type: 'paragraph', text: '可行性分析报告', style: 'First Paragraph' },
+          ...(overrides.length > 0 ? [] : []),
           {
             type: 'table',
             rows: [
@@ -287,7 +294,20 @@ export function createMockApi(): DocXForgeApi {
         })),
         header_text: '示例页眉：项目名称',
         footer_text: null,
+        overrides,
       }
+    },
+
+    async saveCoverOverrides(templateId: string, overrides: Array<{ find: string; replace: string | null; mode: string }>) {
+      await delay(200)
+      const info = templates.find((item) => item.template_id === templateId)
+      if (!info) {
+        throw new ApiError(
+          { code: 'template_not_found', message: '模板不存在。', detail: templateId },
+          404,
+        )
+      }
+      coverOverrideStore.set(templateId, overrides)
     },
 
     async render(request: RenderRequest) {

@@ -237,6 +237,8 @@ class TemplateInfo(BaseModel):
     page_count_hint: int | None = None
     created_at: datetime | None = None
     warnings: list[str] = Field(default_factory=list)
+    #: User-defined cover field replacements (fixed or follow-file-title).
+    cover_overrides: list[CoverOverride] = Field(default_factory=list)
 
 
 class PreparedBase(BaseModel):
@@ -491,6 +493,28 @@ class TemplatePreviewResponse(BaseModel):
     headings: list[HeadingPreview] = Field(default_factory=list)
     header_text: str | None = None
     footer_text: str | None = None
+
+
+class CoverOverrideMode(str, Enum):
+    """How a cover field override is filled at render time."""
+
+    FIXED = "fixed"
+    DOC_TITLE = "doc_title"
+
+
+class CoverOverride(BaseModel):
+    """User-defined replacement for one cover text fragment.
+
+    ``find`` is the exact text fragment from the template cover; at render time
+    it is replaced with ``replace`` (fixed) or the current file title
+    (doc_title mode).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    find: str
+    replace: str | None = None
+    mode: CoverOverrideMode = CoverOverrideMode.FIXED
 
 
 class RenderResponse(BaseModel):

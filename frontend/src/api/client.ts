@@ -48,6 +48,10 @@ export interface DocXForgeApi {
   getTemplateStyles(templateId: string): Promise<TemplateStylesResponse>
   saveStyleMap(templateId: string, styleMap: StyleMap): Promise<void>
   getTemplatePreview(templateId: string): Promise<Record<string, unknown>>
+  saveCoverOverrides(
+    templateId: string,
+    overrides: Array<{ find: string; replace: string | null; mode: string }>,
+  ): Promise<void>
   render(request: RenderRequest): Promise<RenderResponse>
   getJob(jobId: string): Promise<JobInfo>
   /** Fetches the generated docx as a blob so failures surface as `ApiError`. */

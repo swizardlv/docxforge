@@ -128,6 +128,17 @@ export function createHttpApi(base: string = DEFAULT_BASE): DocXForgeApi {
       )
     },
 
+    async saveCoverOverrides(templateId: string, overrides: Array<{ find: string; replace: string | null; mode: string }>) {
+      await request<void>(
+        `/templates/${encodeURIComponent(templateId)}/cover-overrides`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(overrides),
+        },
+      )
+    },
+
     async render(payload: RenderRequest) {
       return request<RenderResponse>('/render', {
         method: 'POST',

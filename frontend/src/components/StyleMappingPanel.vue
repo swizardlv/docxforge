@@ -16,6 +16,63 @@ const draftMap = ref<StyleMap | null>(null)
 const preview = computed(() => store.templatePreview)
 const styles = computed(() => store.templateStyles)
 
+// --- Cover fragment editing -------------------------------------------------
+const editingFragment = ref<{
+  original: string
+  mode: 'fixed' | 'doc_title'
+  replace: string
+} | null>(null)
+const editMode = ref<'fixed' | 'doc_title'>('fixed')
+const editReplace = ref('')
+
+function overrides(): Array<{ find: string; replace: string | null; mode: string }> {
+  return (preview.value?.overrides as any[]) ?? []
+}
+
+function overrideFor(original: string): { find: string; replace: string | null; mode: string } | undefined {
+  return overrides().find((o) => o.find === original)
+}
+
+function displayText(original: string): string {
+  const ov = overrideFor(original)
+  if (!ov) return original
+  if (ov.mode === 'doc_title') return '{{文件标题}}'
+  return ov.replace ?? original
+}
+
+function hasOverride(original: string): boolean {
+  return !!overrideFor(original)
+}
+
+function openEdit(original: string): void {
+  const ov = overrideFor(original)
+  editMode.value = (ov?.mode as 'fixed' | 'doc_title') ?? 'fixed'
+  editReplace.value = ov?.replace ?? ''
+  editingFragment.value = { original, mode: editMode.value, replace: editReplace.value }
+}
+
+function cancelEdit(): void {
+  editingFragment.value = null
+}
+
+async function confirmEdit(): Promise<void> {
+  if (!editingFragment.value) return
+  const current = overrides()
+  const others = current.filter((o) => o.find !== editingFragment.value!.original)
+  const newOverrides = [...others]
+  if (editMode.value === 'doc_title') {
+    newOverrides.push({ find: editingFragment.value.original, replace: null, mode: 'doc_title' })
+  } else if (editReplace.value.trim()) {
+    newOverrides.push({ find: editingFragment.value.original, replace: editReplace.value.trim(), mode: 'fixed' })
+  }
+  // If empty + fixed mode, remove the override (no replacement)
+  editingFragment.value = null
+  const ok = await store.saveCoverOverrides(newOverrides)
+  if (!ok) {
+    saveError.value = store.stylesError?.message ?? '保存失败'
+  }
+}
+
 function setRole(styleId: string, role: StyleRole): void {
   if (!draftMap.value) return
   for (const key of ROLE_ORDER) {
@@ -122,9 +179,12 @@ function resetDraft(): void {
         <template v-else-if="preview">
           <!-- ── ① 封皮预览 ── -->
           <section class="border-b border-line-soft px-4 py-4">
-            <h3 class="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">
-              📄 封皮预览
-            </h3>
+            <div class="mb-3 flex items-center justify-between">
+              <h3 class="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                📄 封皮预览
+              </h3>
+              <span class="text-[10px] text-ink-muted">悬停文本可编辑</span>
+            </div>
             <div class="space-y-2 rounded-lg border border-line-soft bg-surface-muted/30 p-4">
               <div
                 v-for="(item, idx) in (preview.cover as any[] || [])"
@@ -132,9 +192,19 @@ function resetDraft(): void {
                 class="border-b border-line-soft/50 pb-2 last:border-0 last:pb-0"
               >
                 <template v-if="item.type === 'paragraph'">
-                  <p class="text-sm leading-relaxed text-ink">
-                    {{ item.text }}
-                  </p>
+                  <div class="group relative flex items-start">
+                    <p
+                      class="cursor-pointer text-sm leading-relaxed text-ink"
+                      :class="hasOverride(item.text) ? 'rounded bg-accent/10 px-0.5' : ''"
+                      @click="openEdit(item.text)"
+                    >
+                      {{ displayText(item.text) }}
+                    </p>
+                    <span
+                      class="ml-1 mt-0.5 cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
+                      @click="openEdit(item.text)"
+                    >✏️</span>
+                  </div>
                   <p class="mt-0.5 text-[10px] text-ink-muted">
                     样式: {{ item.style || '(无)' }}
                   </p>
@@ -149,9 +219,14 @@ function resetDraft(): void {
                         <td
                           v-for="(cell, ci) in row"
                           :key="ci"
-                          class="border border-line-soft px-2 py-1 text-ink"
+                          class="group relative cursor-pointer border border-line-soft px-2 py-1 text-ink"
+                          :class="hasOverride(cell) ? 'bg-accent/10' : ''"
+                          @click="openEdit(cell)"
                         >
-                          {{ cell }}
+                          {{ displayText(cell) }}
+                          <span
+                            class="absolute -right-1 -top-1 cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
+                          >✏️</span>
                         </td>
                       </tr>
                     </table>
@@ -162,6 +237,63 @@ function resetDraft(): void {
                 </template>
               </div>
             </div>
+
+            <!-- Edit popover -->
+            <div
+              v-if="editingFragment"
+              class="mt-3 rounded-lg border border-accent/40 bg-surface p-3 shadow-md"
+            >
+              <p class="mb-2 text-xs text-ink-muted">
+                为「{{ editingFragment.original.slice(0, 30) }}」设置替换
+              </p>
+              <label class="flex items-center gap-2 text-xs text-ink">
+                <input
+                  v-model="editMode"
+                  type="radio"
+                  value="fixed"
+                >
+                  本项目固定
+                <input
+                  v-model="editMode"
+                  type="radio"
+                  value="doc_title"
+                  class="ml-3"
+                >
+                  跟随文件标题
+              </label>
+              <template v-if="editMode === 'fixed'">
+                <input
+                  v-model="editReplace"
+                  type="text"
+                  class="mt-2 w-full rounded border border-line-soft bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-accent"
+                  placeholder="输入固定文本，留空则恢复原样"
+                >
+              </template>
+              <p
+                v-else
+                class="mt-2 text-xs text-ink-muted"
+              >
+                渲染时此处替换为当前文件标题
+              </p>
+              <div class="mt-2 flex justify-end gap-2">
+                <button
+                  class="rounded border border-line-soft px-2.5 py-1 text-xs text-ink hover:bg-surface-muted"
+                  @click="cancelEdit"
+                >
+                  取消
+                </button>
+                <button
+                  class="rounded bg-accent px-2.5 py-1 text-xs text-white hover:bg-accent/90"
+                  @click="confirmEdit"
+                >
+                  确定
+                </button>
+              </div>
+            </div>
+            <span
+              v-if="saveError"
+              class="mt-2 block text-[10px] text-warn"
+            >{{ saveError }}</span>
           </section>
 
           <!-- ── ② 标题层级预览 ── -->

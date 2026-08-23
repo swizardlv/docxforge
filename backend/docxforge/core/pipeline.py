@@ -94,8 +94,30 @@ class DefaultRenderPipeline:
             #    the appended TOC lands between the cover section and the body
             #    content, not at the end of the document.
             assembler_items: list[BatchItem] = []
-            if request.cover.enabled:
-                assembler_items.extend(self.assembler.cover_commands(request.cover, prepared))
+
+            # Merge template-level cover overrides (from the preview panel)
+            # into the per-request replacements. doc_title mode uses the file's
+            # effective title (request.doc_title or markdown first H1).
+            # Per-request replacements always win over template presets.
+            merged_replacements = dict(request.cover.replacements)
+            if request.template_id:
+                try:
+                    effective_title = request.doc_title or ast.doc_title or ""
+                    for o in self.template_engine.cover_overrides(request.template_id):
+                        if not o.find:
+                            continue
+                        if o.mode.value == "doc_title":
+                            merged_replacements.setdefault(o.find, effective_title)
+                        elif o.replace is not None:
+                            merged_replacements.setdefault(o.find, o.replace)
+                except Exception:
+                    pass
+
+            if request.cover.enabled and merged_replacements:
+                merged_cover = request.cover.model_copy(
+                    update={"replacements": merged_replacements}
+                )
+                assembler_items.extend(self.assembler.cover_commands(merged_cover, prepared))
             if request.toc.enabled:
                 assembler_items.extend(self.assembler.toc_commands(request.toc, prepared))
 

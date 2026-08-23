@@ -14,6 +14,7 @@ from docxforge.errors import TemplateError, TemplateNotFoundError
 from docxforge.interfaces import OfficeCLIRunner
 from docxforge.models import (
     CoverItem,
+    CoverOverride,
     HeadingPreview,
     PreparedBase,
     StyleInfo,
@@ -499,6 +500,31 @@ class DefaultTemplateEngine:
             json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8"
         )
 
+    def save_cover_overrides(
+        self, template_id: str, overrides: list[CoverOverride]
+    ) -> None:
+        """Persist cover field overrides to the template config."""
+        self.get_template(template_id)  # existence check
+        config = self._read_config(template_id)
+        if config is None:
+            raise TemplateNotFoundError(f"Template '{template_id}' not found")
+        config.setdefault("info", {})["cover_overrides"] = [
+            o.model_dump(mode="json") for o in overrides
+        ]
+        config_path = self._template_dir(template_id) / "template_config.json"
+        config_path.write_text(
+            json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+    def _cover_overrides_for(self, template_id: str) -> dict[str, CoverOverride]:
+        """Lookup of find-text → CoverOverride for the template."""
+        info = self.get_template(template_id)
+        return {o.find: o for o in info.cover_overrides}
+
+    def cover_overrides(self, template_id: str) -> list[CoverOverride]:
+        """Cover field replacements configured for the template."""
+        return list(self.get_template(template_id).cover_overrides)
+
     def _read_config(self, template_id: str) -> dict | None:
         config_file = self._template_dir(template_id) / "template_config.json"
         if not config_file.exists():
@@ -595,6 +621,10 @@ class DefaultTemplateEngine:
             "headings": [h.model_dump(mode="json") for h in headings],
             "header_text": header_text,
             "footer_text": footer_text,
+            "overrides": [
+                {"find": o.find, "replace": o.replace, "mode": o.mode.value}
+                for o in self._cover_overrides_for(template_id).values()
+            ],
         }
 
     def _extract_table_rows(self, doc: Path, table_path: str) -> list[list[str]]:

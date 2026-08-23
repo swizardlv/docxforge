@@ -135,6 +135,15 @@ class FakeTemplateEngine:
         validated = StyleMapModel.model_validate(style_map)
         info.style_map = validated
 
+    def save_cover_overrides(self, template_id: str, overrides: object) -> None:
+        info = self.get_template(template_id)
+        from docxforge.models import CoverOverride
+
+        info.cover_overrides = [CoverOverride.model_validate(o) for o in overrides]
+
+    def cover_overrides(self, template_id: str) -> list:
+        return list(self.get_template(template_id).cover_overrides)
+
     def preview_for(self, template_id: str) -> dict:
         self.get_template(template_id)  # raises for unknown templates
         return {
@@ -441,6 +450,28 @@ def test_get_template_preview(client: TestClient, engine: FakeTemplateEngine) ->
 def test_get_template_preview_unknown(client: TestClient) -> None:
     response = client.get("/api/templates/nope/preview")
     assert response.status_code == 404
+
+
+def test_put_cover_overrides(client: TestClient, engine: FakeTemplateEngine) -> None:
+    template_id = client.post(
+        "/api/templates",
+        files={"file": ("t.docx", DOCX_BYTES, DOCX_MEDIA_TYPE)},
+    ).json()["template_id"]
+
+    payload = [
+        {"find": "可行性分析报告", "replace": "XX市智能化项目投标书", "mode": "fixed"},
+        {"find": "便携心电图系统", "replace": "", "mode": "doc_title"},
+    ]
+    response = client.put(
+        f"/api/templates/{template_id}/cover-overrides",
+        json=payload,
+    )
+    assert response.status_code == 204
+    overrides = engine.templates[template_id].cover_overrides
+    assert len(overrides) == 2
+    assert overrides[0].find == "可行性分析报告"
+    assert overrides[0].mode.value == "fixed"
+    assert overrides[1].mode.value == "doc_title"
 
 
 # ---------------------------------------------------------------------------

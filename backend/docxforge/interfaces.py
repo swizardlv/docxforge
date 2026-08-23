@@ -139,6 +139,9 @@ class TemplateEngine(Protocol):
     def style_map_for(self, template_id: str | None) -> StyleMap:
         """Resolve the node-kind -> Word style mapping, honoring template styles."""
 
+    def cover_overrides(self, template_id: str) -> list:
+        """Cover field replacements configured for the template (fixed/doc_title)."""
+
 
 @runtime_checkable
 class MarkdownParser(Protocol):

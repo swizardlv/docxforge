@@ -295,6 +295,26 @@ export const useForgeStore = defineStore('forge', () => {
     }
   }
 
+  async function saveCoverOverrides(
+    overrides: Array<{ find: string; replace: string | null; mode: string }>,
+  ): Promise<boolean> {
+    const tid = templateId.value
+    if (!tid) return false
+    stylesSaving.value = true
+    stylesError.value = null
+    try {
+      await requireApi().saveCoverOverrides(tid, overrides)
+      // Reload preview to reflect the saved overrides
+      await loadTemplatePreview(tid)
+      return true
+    } catch (error) {
+      stylesError.value = toApiError(error, '封皮修改保存失败。')
+      return false
+    } finally {
+      stylesSaving.value = false
+    }
+  }
+
   async function saveStyleMap(templateId: string, styleMap: StyleMap): Promise<boolean> {
     stylesSaving.value = true
     stylesError.value = null
@@ -556,6 +576,8 @@ export const useForgeStore = defineStore('forge', () => {
     stylesError,
     loadTemplateStyles,
     saveStyleMap,
+    loadTemplatePreview,
+    saveCoverOverrides,
     openStylePanel,
     closeStylePanel,
     // form

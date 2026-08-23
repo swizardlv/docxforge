@@ -38,6 +38,7 @@ from docxforge.errors import (
 )
 from docxforge.interfaces import OfficeCLIRunner, RenderPipeline, Sandbox, TemplateEngine
 from docxforge.models import (
+    CoverOverride,
     DestroyReport,
     HealthResponse,
     JobInfo,
@@ -187,6 +188,17 @@ async def get_template_preview(
 ) -> dict:
     """Visual preview of the extracted template structure (cover/headings/header)."""
     return await run_in_threadpool(engine.preview_for, template_id)
+
+
+@router.put("/templates/{template_id}/cover-overrides", status_code=204)
+async def put_cover_overrides(
+    template_id: str,
+    overrides: list[CoverOverride],
+    engine: TemplateEngineDep,
+) -> Response:
+    """Persist cover field overrides (fixed text or follow-file-title)."""
+    await run_in_threadpool(engine.save_cover_overrides, template_id, overrides)
+    return Response(status_code=204)
 
 
 @router.put("/templates/{template_id}/style-map", status_code=204)
