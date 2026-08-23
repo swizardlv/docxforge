@@ -254,6 +254,42 @@ export function createMockApi(): DocXForgeApi {
       styleMapStore.set(templateId, styleMap)
     },
 
+    async getTemplatePreview(templateId: string) {
+      await delay(200)
+      const info = templates.find((item) => item.template_id === templateId)
+      if (!info) {
+        throw new ApiError(
+          { code: 'template_not_found', message: '模板不存在。', detail: templateId },
+          404,
+        )
+      }
+      return {
+        cover: [
+          { type: 'paragraph', text: '可行性分析报告', style: 'First Paragraph' },
+          {
+            type: 'table',
+            rows: [
+              ['项目名称', '便携心电图系统', '项目编号', 'YLHX001'],
+              ['项目来源', '开发任务', '版本', 'V1'],
+            ],
+          },
+          { type: 'paragraph', text: '结论：', style: 'Body Text' },
+        ],
+        headings: STYLES_DB.filter((s) => /^heading/.test(s.style_id)).map((s, i) => ({
+          level: i + 1,
+          name: s.name,
+          font: s.font,
+          size_pt: s.size_pt,
+          color: s.color,
+          bold: s.bold,
+          italic: s.italic,
+          sample: `${'一二三四五六'[i]}、标题示例`,
+        })),
+        header_text: '示例页眉：项目名称',
+        footer_text: null,
+      }
+    },
+
     async render(request: RenderRequest) {
       await delay(LATENCY_MS + Math.min(900, request.markdown.length / 12))
       if (!request.markdown.trim()) {

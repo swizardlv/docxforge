@@ -70,6 +70,7 @@ export const useForgeStore = defineStore('forge', () => {
   // --- style mapping panel -------------------------------------------------
   const stylePanelOpen = ref(false)
   const templateStyles = ref<TemplateStylesResponse | null>(null)
+  const templatePreview = ref<Record<string, unknown> | null>(null)
   const stylesLoading = ref(false)
   const stylesSaving = ref(false)
   const stylesError = ref<ApiError | null>(null)
@@ -282,6 +283,18 @@ export const useForgeStore = defineStore('forge', () => {
     }
   }
 
+  async function loadTemplatePreview(templateId: string): Promise<void> {
+    stylesLoading.value = true
+    try {
+      templatePreview.value = await requireApi().getTemplatePreview(templateId)
+    } catch (error) {
+      stylesError.value = toApiError(error, '模板预览加载失败。')
+      templatePreview.value = null
+    } finally {
+      stylesLoading.value = false
+    }
+  }
+
   async function saveStyleMap(templateId: string, styleMap: StyleMap): Promise<boolean> {
     stylesSaving.value = true
     stylesError.value = null
@@ -305,6 +318,7 @@ export const useForgeStore = defineStore('forge', () => {
     // switched templates or freshly uploaded one since the panel last opened.
     if (templateId.value) {
       void loadTemplateStyles(templateId.value)
+      void loadTemplatePreview(templateId.value)
     }
   }
 
@@ -536,6 +550,7 @@ export const useForgeStore = defineStore('forge', () => {
     // style mapping
     stylePanelOpen,
     templateStyles,
+    templatePreview,
     stylesLoading,
     stylesSaving,
     stylesError,

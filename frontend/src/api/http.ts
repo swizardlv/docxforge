@@ -122,6 +122,12 @@ export function createHttpApi(base: string = DEFAULT_BASE): DocXForgeApi {
       )
     },
 
+    async getTemplatePreview(templateId: string) {
+      return request<Record<string, unknown>>(
+        `/templates/${encodeURIComponent(templateId)}/preview`,
+      )
+    },
+
     async render(payload: RenderRequest) {
       return request<RenderResponse>('/render', {
         method: 'POST',

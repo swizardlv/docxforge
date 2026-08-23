@@ -135,6 +135,25 @@ class FakeTemplateEngine:
         validated = StyleMapModel.model_validate(style_map)
         info.style_map = validated
 
+    def preview_for(self, template_id: str) -> dict:
+        self.get_template(template_id)  # raises for unknown templates
+        return {
+            "cover": [
+                {"type": "paragraph", "text": "封面标题", "style": "Title"},
+                {"type": "table", "rows": [["项目名称", "示例项目"]]},
+            ],
+            "headings": [
+                {"level": 1, "name": "heading 1", "font": "黑体", "size_pt": 22.0},
+                {"level": 2, "name": "heading 2", "font": "黑体", "size_pt": 16.0},
+                {"level": 3, "name": "heading 3"},
+                {"level": 4, "name": "heading 4"},
+                {"level": 5, "name": "heading 5"},
+                {"level": 6, "name": "heading 6"},
+            ],
+            "header_text": "示例页眉",
+            "footer_text": None,
+        }
+
 
 class FakeRunner:
     """Minimal officecli stand-in: version probe + flush-before-read."""
@@ -401,6 +420,26 @@ def test_put_style_map_unknown_template(client: TestClient) -> None:
         "title": "h",
     }
     response = client.put("/api/templates/nope/style-map", json=payload)
+    assert response.status_code == 404
+
+
+def test_get_template_preview(client: TestClient, engine: FakeTemplateEngine) -> None:
+    template_id = client.post(
+        "/api/templates",
+        files={"file": ("t.docx", DOCX_BYTES, DOCX_MEDIA_TYPE)},
+    ).json()["template_id"]
+
+    response = client.get(f"/api/templates/{template_id}/preview")
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["cover"]) >= 1
+    assert payload["cover"][0]["type"] == "paragraph"
+    assert len(payload["headings"]) == 6
+    assert payload["headings"][0]["level"] == 1
+
+
+def test_get_template_preview_unknown(client: TestClient) -> None:
+    response = client.get("/api/templates/nope/preview")
     assert response.status_code == 404
 
 

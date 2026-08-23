@@ -453,6 +453,46 @@ class TemplateStylesResponse(BaseModel):
     style_map: StyleMap = Field(default_factory=StyleMap)
 
 
+class CoverItem(BaseModel):
+    """One element of the template cover preview (paragraph or table)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["paragraph", "table"]
+    text: str | None = None
+    style: str | None = None
+    font: str | None = None
+    size_pt: float | None = None
+    color: str | None = None
+    bold: bool | None = None
+    italic: bool | None = None
+    rows: list[list[str]] | None = None
+
+
+class HeadingPreview(BaseModel):
+    """Format summary of one heading level for the preview panel."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    level: int
+    name: str | None = None
+    font: str | None = None
+    size_pt: float | None = None
+    color: str | None = None
+    bold: bool | None = None
+    italic: bool | None = None
+    sample: str = "标题示例"
+
+
+class TemplatePreviewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cover: list[CoverItem] = Field(default_factory=list)
+    headings: list[HeadingPreview] = Field(default_factory=list)
+    header_text: str | None = None
+    footer_text: str | None = None
+
+
 class RenderResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

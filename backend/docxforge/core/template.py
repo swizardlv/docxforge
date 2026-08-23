@@ -12,7 +12,14 @@ from docxforge.config import Settings, get_settings
 from docxforge.core.officecli import DefaultOfficeCLIRunner
 from docxforge.errors import TemplateError, TemplateNotFoundError
 from docxforge.interfaces import OfficeCLIRunner
-from docxforge.models import PreparedBase, StyleInfo, StyleMap, TemplateInfo
+from docxforge.models import (
+    CoverItem,
+    HeadingPreview,
+    PreparedBase,
+    StyleInfo,
+    StyleMap,
+    TemplateInfo,
+)
 
 #: Word style ids officecli accepts as built-in aliases even when the template's
 #: styles part does not define them (see CONTRACTS.md section 4). The style-map
@@ -515,3 +522,92 @@ class DefaultTemplateEngine:
             if sid:
                 ids.add(str(sid))
         return ids
+
+    # -- template structure preview -------------------------------------------
+
+    def preview_for(self, template_id: str) -> dict:
+        """Assemble the template structure preview (cover / headings / hdr+ftr).
+
+        Returns data shaped like :class:`docxforge.models.TemplatePreviewResponse`.
+        """
+        info = self.get_template(template_id)
+        doc = self._template_dir(template_id) / "template.docx"
+
+        # 1. Cover: leading body elements (paragraphs + tables), formatted.
+        cover: list[CoverItem] = []
+        try:
+            body_data = self.runner.get(doc, "/body", depth=1)
+            results = body_data.get("data", {}).get("results", [])
+            children = results[0].get("children", []) if results else []
+            for child in children:
+                ctype = child.get("type")
+                if ctype in ("sectPr", "section"):
+                    continue
+                if ctype == "paragraph":
+                    cover.append(
+                        CoverItem(
+                            type="paragraph",
+                            text=child.get("text") or "",
+                            style=child.get("style"),
+                        )
+                    )
+                elif ctype == "table":
+                    rows = self._extract_table_rows(doc, child.get("path") or "")
+                    cover.append(CoverItem(type="table", rows=rows))
+                if len(cover) >= 6:
+                    break
+        except Exception:
+            pass
+
+        # 2. Headings: resolved format summary for levels 1-6.
+        headings: list[HeadingPreview] = []
+        for level in range(1, 7):
+            sid = info.style_map.heading(level)
+            style = next((s for s in info.styles if s.style_id == sid), None)
+            headings.append(
+                HeadingPreview(
+                    level=level,
+                    name=style.name if style else sid,
+                    font=style.font if style else None,
+                    size_pt=style.size_pt if style else None,
+                    color=style.color if style else None,
+                    bold=style.bold if style else None,
+                    italic=style.italic if style else None,
+                    sample=f"{'一二三四五六'[level - 1]}、标题示例",
+                )
+            )
+
+        # 3. Header / footer text.
+        header_text: str | None = None
+        footer_text: str | None = None
+        try:
+            headers = self.runner.query(doc, "header")
+            if headers:
+                header_text = (headers[0].get("text") or "").strip() or None
+            footers = self.runner.query(doc, "footer")
+            if footers:
+                footer_text = (footers[0].get("text") or "").strip() or None
+        except Exception:
+            pass
+
+        return {
+            "cover": [c.model_dump(mode="json") for c in cover],
+            "headings": [h.model_dump(mode="json") for h in headings],
+            "header_text": header_text,
+            "footer_text": footer_text,
+        }
+
+    def _extract_table_rows(self, doc: Path, table_path: str) -> list[list[str]]:
+        """Extract the cell text of a table for the cover preview."""
+        rows: list[list[str]] = []
+        try:
+            table_data = self.runner.get(doc, table_path, depth=2)
+            results = table_data.get("data", {}).get("results", [])
+            table = results[0] if results else {}
+            for row in table.get("children", []):
+                cells = [c.get("text", "") for c in row.get("children", [])]
+                if any(cells):
+                    rows.append(cells)
+        except Exception:
+            pass
+        return rows

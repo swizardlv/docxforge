@@ -180,6 +180,15 @@ async def get_template_styles(
     return await run_in_threadpool(engine.styles_for, template_id)
 
 
+@router.get("/templates/{template_id}/preview")
+async def get_template_preview(
+    template_id: str,
+    engine: TemplateEngineDep,
+) -> dict:
+    """Visual preview of the extracted template structure (cover/headings/header)."""
+    return await run_in_threadpool(engine.preview_for, template_id)
+
+
 @router.put("/templates/{template_id}/style-map", status_code=204)
 async def put_template_style_map(
     template_id: str,
